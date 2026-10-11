@@ -1,6 +1,6 @@
 # Opening Trainer: Architecture
 
-Status: **draft for review**. Nothing is implemented yet.
+Status: **agreed design, v1**. Nothing is implemented yet.
 
 ## 1. Goal
 
@@ -23,8 +23,14 @@ platform layer, the same way as MtGLifeTracker.
 2. **Your starting move(s)**: picked on a board, not from a list of names.
    - As White: tap your first move (1.e4, 1.d4, 1.c4, 1.Nf3, 1.e3, …). Each
      option shows how often it is played, so beginners see what is common.
-   - As Black: tap White's first move you want to face, then your reply
-     (for example 1.e4 and 1...e5).
+   - As Black: tap your first move (for example ...e5 or ...c5). White's first
+     move is then either
+     - **random**: chosen among White first moves after which your reply is a
+       book move (so ...c5 gets 1.e4, ...d5 gets 1.d4, 1.c4 or 1.Nf3), weighted
+       by how often they are played, or
+     - **picked by you**: you tap White's first move too (for example 1.e4).
+
+     The picker only offers White first moves after which your reply is book.
    - You can extend the line further if you want (1.e4 e5 2.Nf3), but one move
      is enough.
 3. **Opponent**:
@@ -47,6 +53,8 @@ starting line, so it needs no special handling.
 ### 2.2 During a session
 
 - The board starts after the fixed line (with that line shown in the move list).
+- **Session length counts from the end of the starting line**: "8 moves" means
+  8 of your own moves after it.
 - The bot plays a book reply (see 4.3). When the book runs out, the bot continues
   with Stockfish moves until the session ends.
 - **Instant feedback mode**: after each move you see:
@@ -163,7 +171,11 @@ after enough games per band (a few million is plenty for 20 plies).
   weighted by club-band game counts.
 - In specific-opponent mode, the bot's first reply after your starting line is
   fixed; after that it is random as above.
-- No candidates left (out of book): Stockfish's best move at a modest depth.
+- As Black with a random White first move: White's first move is drawn from the
+  White first moves after which the user's chosen reply is "book for the user",
+  weighted by club-band counts.
+- No candidates left (out of book): Stockfish's best move. Full strength, no
+  handicap, at the same search depth on both platforms.
 
 ### 4.4 File format
 
@@ -344,15 +356,13 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 - **Lichess game data and opening names**: CC0.
 - **cburnett pieces**: CC BY-SA 3.0 (attribution).
 
-## 12. Open questions
+## 12. Decisions
 
-1. As Black, is "pick White's first move, then your reply" the right setup, or
-   should Black only pick which White move to face and then play freely?
-2. Should the session length count from the start of the game or from the end of
-   your starting line? (Proposal: from the end of the starting line.)
-3. Out of book: should the bot play full-strength Stockfish moves, or something
-   weaker and more human?
-4. App name and package (proposal: `com.kregosh.chessopenings`).
+1. **As Black** you pick your own first move. White's first move is random among
+   those that allow it as a book reply, or picked by you (see 2.1).
+2. **Session length** counts from the end of the starting line.
+3. **Out of book**, the bot plays full-strength Stockfish.
+4. **Package**: `com.kregosh.chessopenings`.
 
 ## 13. Suggested build order
 
