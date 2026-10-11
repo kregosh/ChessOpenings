@@ -67,6 +67,11 @@ starting line, so it needs no special handling.
   marked in the report.
 - **Eval bar**: Stockfish evaluation of the current position, updated after
   every move.
+- **Undo**: on your turn you can take back your last move together with the
+  bot's reply, as often as you like, back to the end of the starting line. Works
+  in both feedback modes. After an undo the bot chooses its reply afresh, so the
+  same move can meet a different answer. The report grades the line you finally
+  played and shows how many takebacks you used per move.
 
 ### 2.3 Feedback for beginners
 
@@ -269,6 +274,7 @@ sealed interface TrainerAction {
     data object ShowHint : TrainerAction
     data object Retry : TrainerAction
     data object Continue : TrainerAction
+    data object Undo : TrainerAction
     data class StartSession(val settings: TrainerSettings) : TrainerAction
     // … setup actions, back to setup, train again
 }
@@ -287,6 +293,7 @@ YourMove → move → Checking
   Checking → not book, instant   → Feedback → Retry → YourMove
                                             → Continue → BotThinking | Analyzing
 BotThinking → YourMove | Analyzing (session length reached, or game over)
+YourMove → Undo → YourMove (your last move and the bot's reply taken back)
 Analyzing → Report
 ```
 
@@ -333,7 +340,34 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
   more bands.
 - More explanation rules, possibly per-opening tips.
 
-## 10. Build, CI, release
+## 10. Testing
+
+Every module below `ui` is unit-tested on the JVM; tests run in CI on every push.
+
+- **`chess`**:
+  - perft node counts for the standard test positions,
+  - FEN, SAN and UCI round trips, including edge cases (disambiguation,
+    promotions, castling through check, en passant pins),
+  - Polyglot keys against the published test vectors,
+  - a fixture of random games generated with python-chess, used as an oracle:
+    every position's FEN, legal-move count, SAN of each move and Polyglot key
+    must match.
+- **`core`**:
+  - book reader against a small hand-written `book.bin`,
+  - bot move choice (weights, specific opponent, White's random first move for
+    Black),
+  - session state machine with a fake `Engine` and a fixed random seed: every
+    transition, including retry, continue, undo and session end,
+  - grading thresholds,
+  - each explanation rule on hand-picked positions.
+- **`bookgen`**: count, prune, classify and write steps on a few small PGN files,
+  and a read-back check of the written file.
+- **`ui`**: Compose UI tests for the board (tap-to-move, drag, promotion) and the
+  screens' reaction to given `TrainerState`s, run on the JVM like MtGLifeTracker's.
+- **Platform engines**: a small instrumented test per platform that the engine
+  starts and answers a UCI search.
+
+## 11. Build, CI, release
 
 - Gradle with Kotlin and Compose Multiplatform versions aligned with
   MtGLifeTracker (Kotlin 2.4.20, Compose 1.12.1).
@@ -346,7 +380,7 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
   committed via PR (a few MB), so app builds don't depend on Lichess being
   reachable.
 
-## 11. Licensing
+## 12. Licensing
 
 - **Our code**: MIT (current LICENSE).
 - **Stockfish**: GPL-3.0. We ship it as a separate, unmodified executable or WASM
@@ -356,7 +390,7 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 - **Lichess game data and opening names**: CC0.
 - **cburnett pieces**: CC BY-SA 3.0 (attribution).
 
-## 12. Decisions
+## 13. Decisions
 
 1. **As Black** you pick your own first move. White's first move is random among
    those that allow it as a book reply, or picked by you (see 2.1).
@@ -364,7 +398,7 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 3. **Out of book**, the bot plays full-strength Stockfish.
 4. **Package**: `com.kregosh.chessopenings`.
 
-## 13. Suggested build order
+## 14. Suggested build order
 
 Each step is reviewable on its own.
 
