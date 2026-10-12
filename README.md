@@ -11,8 +11,9 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | Module | State |
 |---|---|
 | `chess` (rules engine) | Done: move generation, FEN, SAN, UCI, Polyglot keys |
-| `tools/bookgen` (opening book from Lichess games) | Next |
-| `core`, `ui`, `app`, `web` | Not started |
+| `core` | Book file format and lookup; training logic next |
+| `tools/bookgen` (opening book from Lichess games) | Done, first real book pending (GitHub Actions) |
+| `ui`, `app`, `web` | Not started |
 
 ## Building and testing
 

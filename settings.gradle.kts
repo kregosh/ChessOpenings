@@ -14,3 +14,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "ChessOpenings"
 include(":chess")
+include(":core")
+include(":bookgen")
+project(":bookgen").projectDir = file("tools/bookgen")

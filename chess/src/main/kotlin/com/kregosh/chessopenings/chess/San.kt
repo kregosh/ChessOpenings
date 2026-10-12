@@ -21,8 +21,16 @@ object San {
     fun parse(position: Position, san: String): Move? {
         val wanted = normalize(san)
         if (wanted.isEmpty()) return null
-        return position.legalMoves.firstOrNull { normalize(withoutSuffix(position, it)) == wanted }
+        // Only moves to the named square (or castling moves) can match; this keeps parsing
+        // fast when reading millions of games.
+        val castling = wanted.startsWith("O-O")
+        val target = if (castling) null else DESTINATION.findAll(wanted).lastOrNull()?.value ?: return null
+        return position.legalMoves.firstOrNull {
+            (if (castling) it.isCastling else it.to.name == target) && normalize(withoutSuffix(position, it)) == wanted
+        }
     }
+
+    private val DESTINATION = Regex("[a-h][1-8]")
 
     private fun normalize(san: String): String =
         san.trim().trimEnd('+', '#', '!', '?').replace("0", "O").replace("=", "")

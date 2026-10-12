@@ -21,7 +21,12 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Install Stockfish
+        run: sudo apt-get update && sudo apt-get install -y stockfish
+
       - name: Run unit tests
+        env:
+          STOCKFISH: /usr/games/stockfish
         run: ./gradlew --no-daemon test
 
       - name: Upload test reports
@@ -29,4 +34,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-reports
-          path: '*/build/reports/tests/'
+          path: |
+            */build/reports/tests/
+            tools/*/build/reports/tests/
