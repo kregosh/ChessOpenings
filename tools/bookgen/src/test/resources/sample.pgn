@@ -1,0 +1,50 @@
+[Event "Rated Blitz game"]
+[Site "https://lichess.org/abc"]
+[White "a"]
+[Black "b"]
+[Result "1-0"]
+[WhiteElo "2105"]
+[BlackElo "2050"]
+[TimeControl "300+0"]
+[Variant "Standard"]
+
+1. e4 { [%clk 0:05:00] } 1... c5 { [%clk 0:05:00] } 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 1-0
+
+[Event "Rated Rapid game"]
+[White "c"]
+[Black "d"]
+[Result "0-1"]
+[WhiteElo "1500"]
+[BlackElo "1450"]
+[TimeControl "600+5"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 $1 4. c3 (4. b4 Bxb4) 4... Nf6 0-1
+
+[Event "Rated Bullet game"]
+[White "e"]
+[Black "f"]
+[Result "1-0"]
+[WhiteElo "1500"]
+[BlackElo "1500"]
+[TimeControl "60+0"]
+
+1. d4 d5 1-0
+
+[Event "Casual Blitz game"]
+[White "g"]
+[Black "h"]
+[Result "1-0"]
+[WhiteElo "1500"]
+[BlackElo "1500"]
+[TimeControl "300+0"]
+
+1. d4 d5 1-0
+[Event "Rated Classical game"]
+[White "i"]
+[Black "j"]
+[Result "1/2-1/2"]
+[WhiteElo "1700"]
+[BlackElo "1650"]
+[TimeControl "1800+20"]
+
+1. d4 d5 2. c4 e6 1/2-1/2

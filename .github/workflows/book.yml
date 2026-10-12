@@ -1,0 +1,98 @@
+name: Build opening book
+
+# Manual run: streams a month of Lichess games, builds data/book.bin and pushes it to a
+# new branch (book/<run number>) for review in a pull request.
+on:
+  workflow_dispatch:
+    inputs:
+      months:
+        description: "Lichess database months, comma-separated (e.g. 2026-08)"
+        required: true
+        default: "2026-08"
+      max_games:
+        description: "Games to read per month (strong games are ~5% of them)"
+        required: true
+        default: "3000000"
+      depth:
+        description: "Stockfish search depth"
+        required: true
+        default: "16"
+      extra_build_args:
+        description: "Extra arguments for 'bookgen build' (thresholds, e.g. --user-share 0.04)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  book:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Install zstd and Stockfish
+        run: sudo apt-get update && sudo apt-get install -y zstd stockfish
+
+      - name: Build bookgen
+        run: ./gradlew --no-daemon :bookgen:installDist
+
+      - name: Count moves
+        env:
+          MONTHS: ${{ inputs.months }}
+          MAX_GAMES: ${{ inputs.max_games }}
+        run: |
+          # bookgen stops reading after MAX_GAMES, which ends the download early on purpose.
+          set +o pipefail
+          files=""
+          for month in ${MONTHS//,/ }; do
+            curl -sSL "https://database.lichess.org/standard/lichess_db_standard_rated_${month}.pgn.zst" \
+              | zstd -dc \
+              | tools/bookgen/build/install/bookgen/bin/bookgen count --out "counts-${month}.txt" --max-games "$MAX_GAMES"
+            test -s "counts-${month}.txt"
+            files="${files:+$files,}counts-${month}.txt"
+          done
+          echo "COUNTS=$files" >> "$GITHUB_ENV"
+
+      - name: Build book
+        env:
+          DEPTH: ${{ inputs.depth }}
+          MONTHS: ${{ inputs.months }}
+          MAX_GAMES: ${{ inputs.max_games }}
+          EXTRA: ${{ inputs.extra_build_args }}
+        run: |
+          tools/bookgen/build/install/bookgen/bin/bookgen build \
+            --counts "$COUNTS" --openings data/openings --out data/book.bin \
+            --stockfish /usr/games/stockfish --depth "$DEPTH" \
+            --source "Lichess rated games ${MONTHS}, first ${MAX_GAMES} per month" $EXTRA 2>&1 | tee build.log
+          for line in "" "e4" "d4" "e4 e5" "e4 c5" "d4 d5"; do
+            tools/bookgen/build/install/bookgen/bin/bookgen dump --book data/book.bin --line "$line"
+          done | tee dump.txt
+
+      - name: Upload counts and logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: book-${{ github.run_number }}
+          path: |
+            counts-*.txt
+            build.log
+            dump.txt
+            data/book.bin
+
+      - name: Push book to a branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "book/${{ github.run_number }}"
+          git add data/book.bin
+          git commit -m "Update opening book (${{ inputs.months }}, depth ${{ inputs.depth }})"
+          git push origin "book/${{ github.run_number }}"
