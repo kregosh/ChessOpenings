@@ -328,6 +328,8 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 - **Board**: drawn with Compose Canvas. Drag and tap-to-move, arrows, highlights,
   promotion picker. Pieces: the classic Lichess "cburnett" set (GPLv2+), turned into Compose vector
   images by `tools/pieces/generate_pieces.py`. Board: light blue and darker blue squares.
+  Moves slide into place (0.35 s), so the bot's move is easy to follow; moves you
+  drag, undo and jumps back aren't animated.
 - **Screens**: Setup (color, starting-line picker board with move popularity,
   opponent, options), Training (board, eval bar, feedback card, hint, move list),
   Report.
