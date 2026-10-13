@@ -19,8 +19,15 @@ $B build --counts counts.txt --openings data/openings --out data/book.bin \
 $B dump --book data/book.bin --line "e4 c5"
 ```
 
-`$B --help` lists every option. The **Build opening book** GitHub Actions workflow runs
-these steps and pushes the book to a `book/<run>` branch.
+`$B --help` lists every option.
+
+For big runs the engine work can be split: `$B evaluate --shard I --shards N --out evals-I.txt`
+(same counts and thresholds in every shard), then `$B build --evals evals-0.txt,…` instead
+of `--stockfish`.
+
+The **Build opening book** GitHub Actions workflow does exactly that: one counting job per
+month, then N parallel evaluation jobs, then a build job that pushes the book to a
+`book/<run>` branch.
 
 ## What goes in
 

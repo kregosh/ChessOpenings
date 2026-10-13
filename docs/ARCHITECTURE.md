@@ -174,9 +174,10 @@ attached to positions by hash.
 The thresholds will need tuning once we see real numbers.
 
 **Where it runs:** the manual **Build opening book** GitHub Actions workflow
-(`.github/workflows/book.yml`) streams a month, builds `data/book.bin`, uploads
-the counts and a dump of the main lines, and pushes the book to a `book/<run>`
-branch for review. `bookgen` also runs locally; see `tools/bookgen/README.md`.
+(`.github/workflows/book.yml`). One job per month streams and counts its games; the
+popular positions are then split across parallel Stockfish jobs (shards), which keeps
+each job well inside GitHub's 6-hour limit; a final job builds `data/book.bin`, uploads
+a dump of the main lines, and pushes the book to a `book/<run>` branch for review. `bookgen` also runs locally; see `tools/bookgen/README.md`.
 
 A full month is about 30 GB compressed. Streaming avoids storing it, and we stop
 after enough games per band (a few million is plenty for 20 plies).
