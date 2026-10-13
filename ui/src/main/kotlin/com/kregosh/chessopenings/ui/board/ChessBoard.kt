@@ -1,10 +1,14 @@
 package com.kregosh.chessopenings.ui.board
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -13,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -69,6 +74,29 @@ fun ChessBoard(
     val currentOnTap by rememberUpdatedState(onTap)
     val currentOnDrop by rememberUpdatedState(onDrop)
 
+    // Moves slide into place, so it's easy to see what the bot played. A move the user just
+    // dragged is already where it belongs and isn't animated; nor is anything that isn't a
+    // single move forward (undo, a new session, jumping back from the report).
+    val previous = remember { PositionHolder(position) }
+    var dropped by remember { mutableStateOf<Pair<Square, Square>?>(null) }
+    var sliding by remember { mutableStateOf<Slide?>(null) }
+    val progress = remember { Animatable(1f) }
+    LaunchedEffect(position) {
+        val before = previous.position
+        previous.position = position
+        val move = lastMove
+        val wasDragged = move != null && dropped == (move.from to move.to)
+        dropped = null
+        if (move == null || wasDragged || move !in before.legalMoves || before.play(move).toFen() != position.toFen()) {
+            sliding = null
+            return@LaunchedEffect
+        }
+        sliding = Slide.of(before, move)
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(durationMillis = SLIDE_MILLIS, easing = FastOutSlowInEasing))
+        sliding = null
+    }
+
     fun squareAt(offset: Offset, boardSize: Float): Square? {
         val sq = boardSize / 8
         val col = (offset.x / sq).toInt()
@@ -102,7 +130,12 @@ fun ChessBoard(
                         if (released) {
                             if (dragging) {
                                 dragFrom = null
-                                squareAt(change.position, boardSize)?.let { to -> if (to != start) currentOnDrop(start, to) }
+                                squareAt(change.position, boardSize)?.let { to ->
+                                    if (to != start) {
+                                        dropped = start to to
+                                        currentOnDrop(start, to)
+                                    }
+                                }
                             } else {
                                 currentOnTap(start)
                             }
@@ -140,11 +173,20 @@ fun ChessBoard(
         lastMove?.let { m -> for (s in listOf(m.from, m.to)) drawRect(BoardColors.lastMove, topLeft(s), Size(sq, sq)) }
         selected?.let { drawRect(BoardColors.selected, topLeft(it), Size(sq, sq)) }
 
-        // Pieces; the dragged one follows the pointer, drawn last.
+        // Pieces; the dragged one follows the pointer, drawn last. While a move slides in,
+        // the board shows the position before it, with the moving pieces in flight on top.
+        val slide = sliding
+        val shown = slide?.before ?: position
         for (s in Square.all) {
             if (s == dragFrom) continue
-            val piece = position.pieceAt(s) ?: continue
+            if (slide != null && slide.pieces.any { it.from == s }) continue
+            val piece = shown.pieceAt(s) ?: continue
             drawPiece(painters.getValue(piece.color to piece.type), topLeft(s), sq)
+        }
+        if (slide != null) {
+            for (p in slide.pieces) {
+                drawPiece(painters.getValue(p.color to p.type), lerp(topLeft(p.from), topLeft(p.to), progress.value), sq)
+            }
         }
 
         // Move targets: dots on empty squares, rings on captures.
@@ -164,6 +206,31 @@ fun ChessBoard(
         }
     }
 }
+
+private const val SLIDE_MILLIS = 350
+
+/** The last position the board showed; kept outside of state so updating it doesn't recompose. */
+private class PositionHolder(var position: Position)
+
+/** A move being animated: the position before it and the pieces sliding (king and rook when castling). */
+private class Slide(val before: Position, val pieces: List<SlidingPiece>) {
+    companion object {
+        fun of(before: Position, move: Move): Slide {
+            val mover = before.pieceAt(move.from)!!
+            val pieces = mutableListOf(SlidingPiece(mover.color, mover.type, move.from, move.to))
+            if (move.isCastling) {
+                val rank = move.from.rank
+                val kingside = move.to.file > move.from.file
+                val rookFrom = Square.of(if (kingside) 7 else 0, rank)
+                val rookTo = Square.of(if (kingside) 5 else 3, rank)
+                pieces += SlidingPiece(mover.color, PieceType.ROOK, rookFrom, rookTo)
+            }
+            return Slide(before, pieces)
+        }
+    }
+}
+
+private class SlidingPiece(val color: Color, val type: PieceType, val from: Square, val to: Square)
 
 private fun coordinateColor(s: Square) = if ((s.file + s.rank) % 2 == 1) BoardColors.coordinateOnLight else BoardColors.coordinateOnDark
 
