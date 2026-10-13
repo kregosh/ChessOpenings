@@ -16,7 +16,9 @@ java {
 
 dependencies {
     api(project(":chess"))
+    api(libs.kotlinx.coroutines.core)
     testImplementation(libs.kotlin.test)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
 
 tasks.test {
