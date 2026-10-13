@@ -327,22 +327,41 @@ class TrainerController(
     private fun showHint() {
         hintUsed = true
         val p = position
-        val book = grader.bookMoves(p).take(3).mapNotNull { it.toMove(p) }
+        val bookMoves = grader.bookMoves(p).take(HINT_BOOK_MOVES).mapNotNull { it.toMove(p) }
+        fun hintMove(m: Move, book: Boolean, score: Score?, best: Boolean) =
+            HintMove(San.write(p, m), book, this.book.name(p.play(m)), score, best)
         hintJob?.cancel()
         _state.update { s ->
             s.copy(
-                hint = Hint(book.map { San.write(p, it) }, null),
-                arrows = book.map { Arrow(it.from, it.to, ArrowKind.BOOK) },
+                hint = Hint(bookMoves.map { hintMove(it, true, null, false) }, engineDone = false),
+                arrows = bookMoves.map { Arrow(it.from, it.to, ArrowKind.BOOK) },
             )
         }
         hintJob = scope.launch {
-            val best = runCatching { engine.analyze(p.toFen(), depths.eval).firstOrNull()?.let { Uci.parse(p, it.move) } }
-                .getOrNull() ?: return@launch
+            // Stockfish's own top moves first; then one search scoring those and the book moves
+            // together, so every candidate gets a score and the scores are comparable.
+            val lines = runCatching {
+                val fen = p.toFen()
+                val top = engine.analyze(fen, depths.eval, multiPv = HINT_LINES).map { it.move }
+                val candidates = (bookMoves.map { it.uci } + top).distinct()
+                engine.analyze(fen, depths.eval, searchMoves = candidates, multiPv = candidates.size)
+            }.getOrNull()
             if (position != p) return@launch
+            val scores = lines.orEmpty().mapNotNull { l -> Uci.parse(p, l.move)?.let { it to l.score } }.toMap()
+            val top = scores.values.maxOfOrNull { it.value }
+            val isBest = { s: Score? -> s != null && top != null && s.value >= top }
+            val extras = scores.entries
+                .filter { (m, s) -> m !in bookMoves && top != null && s.value >= top - HINT_MARGIN_CP }
+                .sortedByDescending { it.value.value }
+                .take(HINT_ENGINE_MOVES)
             _state.update { s ->
                 s.copy(
-                    hint = s.hint?.copy(engineMove = San.write(p, best)),
-                    arrows = if (book.contains(best)) s.arrows else s.arrows + Arrow(best.from, best.to, ArrowKind.ENGINE),
+                    hint = Hint(
+                        bookMoves.map { hintMove(it, true, scores[it], isBest(scores[it])) } +
+                            extras.map { (m, score) -> hintMove(m, false, score, isBest(score)) },
+                        engineDone = true,
+                    ),
+                    arrows = s.arrows + extras.map { (m, _) -> Arrow(m.from, m.to, ArrowKind.ENGINE) },
                 )
             }
         }
@@ -373,5 +392,14 @@ class TrainerController(
         } catch (e: Exception) {
             _state.update { it.copy(error = e.message ?: e.toString()) }
         }
+    }
+
+    private companion object {
+        const val HINT_BOOK_MOVES = 4
+        /** Stockfish's own candidates considered. */
+        const val HINT_LINES = 3
+        /** Non-book engine moves this close to the best are listed. */
+        const val HINT_MARGIN_CP = 20
+        const val HINT_ENGINE_MOVES = 2
     }
 }

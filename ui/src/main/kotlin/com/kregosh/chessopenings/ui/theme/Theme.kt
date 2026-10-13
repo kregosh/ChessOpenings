@@ -22,6 +22,8 @@ object BoardColors {
 object QualityColors {
     val book = Color(0xFF2E9E5B)
     val best = Color(0xFF239A7A)
+    /** Stockfish's own suggestions, as the orange engine arrow. */
+    val engine = Color(0xFFC86A1E)
     val playable = Color(0xFF4A86C8)
     val inaccuracy = Color(0xFFD9A520)
     val mistake = Color(0xFFE07B30)

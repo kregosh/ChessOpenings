@@ -154,7 +154,7 @@ fun SetupScreen(catalog: SetupCatalog, initial: SetupSelection, onStart: (Traini
                         ) { Text(label) }
                     }
                 }
-                Toggle("Allow \"show best move\" hints", selection.options.hints) {
+                Toggle("Allow move suggestions", selection.options.hints) {
                     selection = selection.copy(options = selection.options.copy(hints = it))
                 }
                 Toggle("Show the Stockfish eval bar", selection.options.evalBar) {

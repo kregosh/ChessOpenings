@@ -42,7 +42,7 @@ platform layer, the same way as MtGLifeTracker.
 4. **Options**:
    - Session length: 5–10 of your own moves.
    - Feedback: after every move, or once at the end.
-   - "Show best move" hint button.
+   - "Show good moves" button (move suggestions).
    - Stockfish eval bar.
 
 The setup is therefore just a **fixed starting line** (made of your moves and
@@ -63,8 +63,11 @@ starting line, so it needs no special handling.
     choose **Try again** or **Continue anyway**.
 - **End feedback mode**: you play all your moves uninterrupted, then get a
   move-by-move report.
-- **Hint**: arrows for the book move(s) and Stockfish's best move. Hints used are
-  marked in the report.
+- **Show good moves**: a list of candidates with arrows. Book moves (green) come
+  with the opening they lead to; Stockfish's own picks that aren't book but are as
+  good (within 0.2 pawns) are orange. Every candidate gets Stockfish's evaluation
+  from one shared search, and the favourites get a "Top pick" badge. Suggestions
+  used are marked in the report.
 - **Eval bar**: Stockfish evaluation of the current position, updated after
   every move.
 - **Undo**: on your turn you can take back your last move together with the

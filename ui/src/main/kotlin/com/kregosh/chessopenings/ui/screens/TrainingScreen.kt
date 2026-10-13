@@ -28,6 +28,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,6 +42,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kregosh.chessopenings.chess.PieceType
 import com.kregosh.chessopenings.core.training.Feedback
+import com.kregosh.chessopenings.core.training.Hint
 import com.kregosh.chessopenings.core.training.FeedbackMode
 import com.kregosh.chessopenings.core.training.Phase
 import com.kregosh.chessopenings.core.training.PlayedMove
@@ -113,15 +115,7 @@ private fun SidePanelContent(state: TrainerState, dispatch: (TrainerAction) -> U
     StatusLine(state)
     state.feedback?.takeIf { state.setup?.options?.feedback == FeedbackMode.INSTANT }?.let { FeedbackCard(it, dispatch) }
     Actions(state, dispatch)
-    state.hint?.let { h ->
-        Text(
-            buildString {
-                append(if (h.bookMoves.isEmpty()) "No book moves here." else "Book: ${h.bookMoves.joinToString(", ")}")
-                h.engineMove?.let { append("   ·   Stockfish: $it") }
-            },
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
+    state.hint?.let { HintCard(it) }
     MoveList(state.moves)
 }
 
@@ -205,8 +199,41 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
 private fun Actions(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
     if (state.phase != Phase.YOUR_MOVE) return
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (state.setup?.options?.hints == true) OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show best move") }
+        if (state.setup?.options?.hints == true) OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show good moves") }
         OutlinedButton(onClick = { dispatch(TrainerAction.Undo) }, enabled = state.canUndo) { Text("Undo") }
+    }
+}
+
+@Composable
+private fun HintCard(hint: Hint) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Good moves here", fontWeight = FontWeight.Bold)
+            if (hint.moves.isEmpty() && hint.engineDone) Text("Stockfish has no suggestion.")
+            for (m in hint.moves) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(m.san, fontWeight = FontWeight.Bold, modifier = Modifier.width(52.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when {
+                                m.book -> m.openingName ?: Strings.HINT_BOOK
+                                else -> Strings.HINT_ENGINE_ONLY
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (m.book) QualityColors.book else QualityColors.engine,
+                        )
+                    }
+                    m.score?.let { Text(Strings.eval(it), style = MaterialTheme.typography.bodyMedium) }
+                    if (m.best) {
+                        Surface(color = QualityColors.best, shape = RoundedCornerShape(50)) {
+                            Text("Top pick", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                        }
+                    }
+                }
+            }
+            if (!hint.engineDone) Text("Stockfish is thinking…", style = MaterialTheme.typography.bodySmall)
+            else if (hint.moves.none { it.book }) Text("You're past the end of the book.", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 

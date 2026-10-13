@@ -8,6 +8,8 @@ import com.kregosh.chessopenings.core.training.ReasonKind
 /** All user-facing text, in one place. */
 object Strings {
     const val APP_NAME = "Opening Trainer"
+    const val HINT_BOOK = "Book move"
+    const val HINT_ENGINE_ONLY = "Stockfish's choice, not in the book"
 
     fun quality(q: Quality): String = when (q) {
         Quality.BOOK -> "Book move"

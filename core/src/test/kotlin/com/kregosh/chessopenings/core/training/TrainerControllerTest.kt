@@ -207,15 +207,28 @@ class TrainerControllerTest {
     }
 
     @Test
-    fun hintShowsBookAndEngineArrows() = runTest {
+    fun hintListsBookAndEqualEngineMoves() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(white("e4", "e5")))
-        engine.set(line("e4", "e5"), "d4", 99) // the engine prefers a non-book move
+        val p = line("e4", "e5")
+        engine.set(p, "Nf3", 99)
+        engine.set(p, "d4", 99) // as good as Nf3, but not book here
+        engine.set(p, "Bc4", 50)
+        engine.set(p, "Nc3", 85) // not book, and 14 cp worse: listed too
         c.dispatch(TrainerAction.ShowHint)
-        assertEquals(listOf("Nf3", "Bc4"), c.s.hint?.bookMoves)
+        assertEquals(listOf("Nf3", "Bc4"), c.s.hint?.moves?.map { it.san })
+        assertFalse(c.s.hint!!.engineDone)
         advanceUntilIdle()
-        assertEquals("d4", c.s.hint?.engineMove)
-        assertEquals(listOf(ArrowKind.BOOK, ArrowKind.BOOK, ArrowKind.ENGINE), c.s.arrows.map { it.kind })
+
+        val h = assertNotNull(c.s.hint)
+        assertTrue(h.engineDone)
+        assertEquals(listOf("Nf3", "Bc4", "d4", "Nc3"), h.moves.map { it.san })
+        assertEquals(listOf(true, true, false, false), h.moves.map { it.book })
+        assertEquals(listOf(true, false, true, false), h.moves.map { it.best })
+        assertEquals(listOf(99, 50, 99, 85), h.moves.map { it.score?.cp })
+        assertEquals("King's Knight Opening", h.moves[0].openingName)
+        assertEquals(listOf(ArrowKind.BOOK, ArrowKind.BOOK, ArrowKind.ENGINE, ArrowKind.ENGINE), c.s.arrows.map { it.kind })
+
         c.move("Nf3")
         advanceUntilIdle()
         assertTrue(c.s.moves[2].hintUsed)
