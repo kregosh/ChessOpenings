@@ -28,6 +28,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,10 +37,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kregosh.chessopenings.chess.PieceType
 import com.kregosh.chessopenings.core.training.Feedback
+import com.kregosh.chessopenings.core.training.Hint
 import com.kregosh.chessopenings.core.training.FeedbackMode
 import com.kregosh.chessopenings.core.training.Phase
 import com.kregosh.chessopenings.core.training.PlayedMove
@@ -112,15 +115,7 @@ private fun SidePanelContent(state: TrainerState, dispatch: (TrainerAction) -> U
     StatusLine(state)
     state.feedback?.takeIf { state.setup?.options?.feedback == FeedbackMode.INSTANT }?.let { FeedbackCard(it, dispatch) }
     Actions(state, dispatch)
-    state.hint?.let { h ->
-        Text(
-            buildString {
-                append(if (h.bookMoves.isEmpty()) "No book moves here." else "Book: ${h.bookMoves.joinToString(", ")}")
-                h.engineMove?.let { append("   ·   Stockfish: $it") }
-            },
-            style = MaterialTheme.typography.bodyMedium,
-        )
-    }
+    state.hint?.let { HintCard(it) }
     MoveList(state.moves)
 }
 
@@ -155,6 +150,7 @@ private fun StatusLine(state: TrainerState) {
 @Composable
 fun qualityColor(q: Quality): Color = when (q) {
     Quality.BOOK -> QualityColors.book
+    Quality.BEST -> QualityColors.best
     Quality.PLAYABLE -> QualityColors.playable
     Quality.INACCURACY -> QualityColors.inaccuracy
     Quality.MISTAKE -> QualityColors.mistake
@@ -169,9 +165,14 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
         Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(6.dp).fillMaxHeight().background(color))
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val san = feedback.move.san
                 Text(
-                    if (v.inBook) "${feedback.move.san}: ${Strings.praise(feedback.move.san.length + feedback.move.uci.hashCode())}"
-                    else "${feedback.move.san}: ${if (v.pastBook) "" else "not book · "}${Strings.quality(v.quality)}",
+                    when {
+                        v.inBook -> "$san: ${Strings.praise(san.length + feedback.move.uci.hashCode())}"
+                        v.quality == Quality.BEST && v.pastBook -> "$san: Best move! Stockfish agrees."
+                        v.quality == Quality.BEST -> "$san: not book, but Stockfish's top choice"
+                        else -> "$san: ${if (v.pastBook) "" else "not book · "}${Strings.quality(v.quality)}"
+                    },
                     fontWeight = FontWeight.Bold,
                     color = color,
                 )
@@ -179,7 +180,7 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
                 if (!v.inBook) {
                     if (v.bookMoves.isNotEmpty()) Text("Book moves here: ${v.bookMoves.take(4).joinToString(", ")}")
                     else Text("You're past the end of the book.", style = MaterialTheme.typography.bodySmall)
-                    v.bestMove?.let { best ->
+                    v.bestMove?.takeIf { v.quality != Quality.BEST }?.let { best ->
                         Text("Stockfish prefers $best" + (v.lossCp?.takeIf { it > 0 }?.let { " (this move costs ${Strings.pawns(it)})" } ?: ""))
                     }
                 }
@@ -198,21 +199,57 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
 private fun Actions(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
     if (state.phase != Phase.YOUR_MOVE) return
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (state.setup?.options?.hints == true) OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show best move") }
+        if (state.setup?.options?.hints == true) OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show good moves") }
         OutlinedButton(onClick = { dispatch(TrainerAction.Undo) }, enabled = state.canUndo) { Text("Undo") }
+    }
+}
+
+@Composable
+private fun HintCard(hint: Hint) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Good moves here", fontWeight = FontWeight.Bold)
+            if (hint.moves.isEmpty() && hint.engineDone) Text("Stockfish has no suggestion.")
+            for (m in hint.moves) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(m.san, fontWeight = FontWeight.Bold, modifier = Modifier.width(52.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            when {
+                                m.book -> m.openingName ?: Strings.HINT_BOOK
+                                else -> Strings.HINT_ENGINE_ONLY
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (m.book) QualityColors.book else QualityColors.engine,
+                        )
+                    }
+                    m.score?.let { Text(Strings.eval(it), style = MaterialTheme.typography.bodyMedium) }
+                    if (m.best) {
+                        Surface(color = QualityColors.best, shape = RoundedCornerShape(50)) {
+                            Text("Top pick", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp))
+                        }
+                    }
+                }
+            }
+            if (!hint.engineDone) Text("Stockfish is thinking…", style = MaterialTheme.typography.bodySmall)
+            else if (hint.moves.none { it.book }) Text("You're past the end of the book.", style = MaterialTheme.typography.bodySmall)
+        }
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MoveList(moves: List<PlayedMove>) {
+fun MoveList(moves: List<PlayedMove>, onUserMoveClick: ((Int) -> Unit)? = null) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         moves.forEachIndexed { i, m ->
             val number = if (i % 2 == 0) "${i / 2 + 1}. " else ""
             val color = m.verdict?.let { qualityColor(it.quality) }
+            val clickable = onUserMoveClick != null && m.byUser && !m.startingLine
             Text(
                 number + m.san,
                 fontWeight = if (m.byUser) FontWeight.SemiBold else FontWeight.Normal,
+                textDecoration = if (clickable) TextDecoration.Underline else null,
+                modifier = if (clickable) Modifier.clickable { onUserMoveClick(i) } else Modifier,
                 color = when {
                     m.startingLine -> MaterialTheme.colorScheme.onSurfaceVariant
                     color != null -> color

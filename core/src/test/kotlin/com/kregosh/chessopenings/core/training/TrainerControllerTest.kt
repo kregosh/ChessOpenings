@@ -117,7 +117,8 @@ class TrainerControllerTest {
     fun pastTheBookOnlyRealErrorsStopTheUser() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(white("e4", "e5", "Nf3", "Nc6")))
-        c.move("Bb5") // every move scores 0: playable, and the book has nothing here
+        engine.set(line("e4", "e5", "Nf3", "Nc6"), "Bc4", 20) // better than Bb5's 0
+        c.move("Bb5") // 20 cp worse: playable, and the book has nothing here
         advanceUntilIdle()
         assertEquals(Phase.YOUR_MOVE, c.s.phase)
         assertEquals(Quality.PLAYABLE, c.s.moves[4].verdict?.quality)
@@ -162,6 +163,37 @@ class TrainerControllerTest {
     }
 
     @Test
+    fun reportMovesCanBeReplayedFromThere() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(moves = 2, feedback = FeedbackMode.END))))
+        c.move("Nf3")
+        advanceUntilIdle()
+        c.move("Bc4")
+        advanceUntilIdle()
+        assertEquals(Phase.REPORT, c.s.phase)
+
+        // Starting-line and bot moves can't be resumed from; nothing happens.
+        c.dispatch(TrainerAction.ResumeFrom(0))
+        c.dispatch(TrainerAction.ResumeFrom(3))
+        assertEquals(Phase.REPORT, c.s.phase)
+
+        // Back to before 3.Bc4 (index 4): Nf3 keeps its verdict, the session continues.
+        c.dispatch(TrainerAction.ResumeFrom(4))
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertNull(c.s.report)
+        assertEquals(line("e4", "e5", "Nf3", "Nc6"), c.s.position)
+        assertEquals(Quality.BOOK, c.s.moves[2].verdict?.quality)
+        assertEquals(1, c.s.userMovesPlayed)
+        assertTrue(c.s.canUndo)
+        c.move("Bb5")
+        advanceUntilIdle()
+        val r = assertNotNull(c.s.report)
+        assertEquals("Bb5", r.moves[4].san)
+        assertEquals(1, r.moves[4].takebacks)
+        assertEquals(2, r.userMoves)
+    }
+
+    @Test
     fun blackWithARandomWhiteFirstMove() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(TrainingSetup(Color.BLACK, listOf("c7c5"), randomWhiteFirstMove = true)))
@@ -175,15 +207,28 @@ class TrainerControllerTest {
     }
 
     @Test
-    fun hintShowsBookAndEngineArrows() = runTest {
+    fun hintListsBookAndEqualEngineMoves() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(white("e4", "e5")))
-        engine.set(line("e4", "e5"), "d4", 99) // the engine prefers a non-book move
+        val p = line("e4", "e5")
+        engine.set(p, "Nf3", 99)
+        engine.set(p, "d4", 99) // as good as Nf3, but not book here
+        engine.set(p, "Bc4", 50)
+        engine.set(p, "Nc3", 85) // not book, and 14 cp worse: listed too
         c.dispatch(TrainerAction.ShowHint)
-        assertEquals(listOf("Nf3", "Bc4"), c.s.hint?.bookMoves)
+        assertEquals(listOf("Nf3", "Bc4"), c.s.hint?.moves?.map { it.san })
+        assertFalse(c.s.hint!!.engineDone)
         advanceUntilIdle()
-        assertEquals("d4", c.s.hint?.engineMove)
-        assertEquals(listOf(ArrowKind.BOOK, ArrowKind.BOOK, ArrowKind.ENGINE), c.s.arrows.map { it.kind })
+
+        val h = assertNotNull(c.s.hint)
+        assertTrue(h.engineDone)
+        assertEquals(listOf("Nf3", "Bc4", "d4", "Nc3"), h.moves.map { it.san })
+        assertEquals(listOf(true, true, false, false), h.moves.map { it.book })
+        assertEquals(listOf(true, false, true, false), h.moves.map { it.best })
+        assertEquals(listOf(99, 50, 99, 85), h.moves.map { it.score?.cp })
+        assertEquals("King's Knight Opening", h.moves[0].openingName)
+        assertEquals(listOf(ArrowKind.BOOK, ArrowKind.BOOK, ArrowKind.ENGINE, ArrowKind.ENGINE), c.s.arrows.map { it.kind })
+
         c.move("Nf3")
         advanceUntilIdle()
         assertTrue(c.s.moves[2].hintUsed)

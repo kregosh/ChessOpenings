@@ -46,14 +46,17 @@ kotlin {
             // The screens, shared with the Android app.
             kotlin.srcDir("../ui/src/main/kotlin")
             dependencies {
-                implementation(compose.runtime)
-                implementation(compose.foundation)
-                implementation(compose.material3)
-                implementation(compose.ui)
+                // Compose Multiplatform 1.12.1; its Material 3 is versioned separately.
+                implementation("org.jetbrains.compose.runtime:runtime:1.12.1")
+                implementation("org.jetbrains.compose.foundation:foundation:1.12.1")
+                implementation("org.jetbrains.compose.material3:material3:1.9.0")
+                implementation("org.jetbrains.compose.ui:ui:1.12.1")
                 implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0")
             }
         }
         val wasmJsMain by getting {
+            // The browser glue (Worker, fetch) uses js() interop, still marked experimental.
+            languageSettings.optIn("kotlin.js.ExperimentalWasmJsInterop")
             // The opening book and the Stockfish engine, served next to the app.
             resources.srcDir(copyBook)
             resources.srcDir(copyEngine)

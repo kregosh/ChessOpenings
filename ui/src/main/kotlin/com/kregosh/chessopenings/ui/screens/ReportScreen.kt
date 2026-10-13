@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.kregosh.chessopenings.core.training.Quality
 import com.kregosh.chessopenings.core.training.Report
 import com.kregosh.chessopenings.core.training.TrainerAction
 import com.kregosh.chessopenings.ui.Strings
@@ -46,12 +47,17 @@ fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit) {
             )
             if (extras.isNotEmpty()) Text(extras.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            MoveList(report.moves)
+            Text(
+                "Tap one of your moves to go back and try something else from there.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            MoveList(report.moves) { dispatch(TrainerAction.ResumeFrom(it)) }
 
             report.moves.forEachIndexed { i, m ->
                 val v = m.verdict ?: return@forEachIndexed
                 val number = "${i / 2 + 1}.${if (i % 2 == 1) ".." else ""} ${m.san}"
-                Card(Modifier.fillMaxWidth()) {
+                Card(onClick = { dispatch(TrainerAction.ResumeFrom(i)) }, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(number, fontWeight = FontWeight.Bold)
@@ -62,7 +68,7 @@ fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit) {
                         for (r in v.reasons.take(2)) Text("• " + Strings.reason(r), style = MaterialTheme.typography.bodyMedium)
                         if (!v.inBook) {
                             if (v.bookMoves.isNotEmpty()) Text("Book: ${v.bookMoves.take(4).joinToString(", ")}", style = MaterialTheme.typography.bodyMedium)
-                            v.bestMove?.takeIf { it != m.san }?.let { Text("Stockfish: $it", style = MaterialTheme.typography.bodyMedium) }
+                            v.bestMove?.takeIf { it != m.san && v.quality != Quality.BEST }?.let { Text("Stockfish: $it", style = MaterialTheme.typography.bodyMedium) }
                         }
                     }
                 }

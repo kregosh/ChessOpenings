@@ -47,12 +47,24 @@ data class Feedback(
     val blocking: Boolean,
 )
 
-data class Hint(
-    /** Book moves (SAN), most popular first. */
-    val bookMoves: List<String>,
-    /** Stockfish's best move (SAN), if it answered. */
-    val engineMove: String?,
+/** One candidate in the hint list. */
+data class HintMove(
+    val san: String,
+    /** A book move for the user here. */
+    val book: Boolean,
+    /** The opening the move leads to, if that position has a name. */
+    val openingName: String?,
+    /** Stockfish's evaluation after the move, from the user's side; null if unknown. */
+    val score: Score?,
+    /** Ties for Stockfish's top evaluation. */
+    val best: Boolean,
 )
+
+/**
+ * "Show best move": the book moves (most popular first), then Stockfish's own picks that
+ * aren't book but are as good. Scores arrive once Stockfish has answered ([engineDone]).
+ */
+data class Hint(val moves: List<HintMove>, val engineDone: Boolean)
 
 data class Report(
     /** The whole session, starting line included; the user's moves carry verdicts. */
@@ -110,6 +122,11 @@ sealed interface TrainerAction {
     data object Undo : TrainerAction
     /** Same setup again. */
     data object Restart : TrainerAction
+    /**
+     * From the report: go back to just before the user's move at [moveIndex] (an index into
+     * [TrainerState.moves]) and play on from there.
+     */
+    data class ResumeFrom(val moveIndex: Int) : TrainerAction
     /** Back to the setup screen. */
     data object Quit : TrainerAction
 }
