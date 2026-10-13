@@ -70,6 +70,10 @@ starting line, so it needs no special handling.
   used are marked in the report.
 - **Eval bar**: Stockfish evaluation of the current position, updated after
   every move.
+- **Change the opponent's move**: after the bot moves, you can take its move back and
+  pick the opponent's move yourself, to look at a line you've met. Play it on the
+  board or choose from the book replies (with popularity and opening name); Cancel
+  keeps the bot's move. Such moves are shown in italics.
 - **Undo**: on your turn you can take back your last move together with the
   bot's reply, as often as you like, back to the end of the starting line. Works
   in both feedback modes. After an undo the bot chooses its reply afresh, so the
@@ -263,6 +267,7 @@ class TrainerController(book: OpeningBook, engine: Engine, scope: CoroutineScope
   (moves played and total), whether undo is possible, report, error.
 - **`TrainerAction`**: `Start(setup)`, `SquareTapped`, `PieceDropped`,
   `PromotionChosen`, `PromotionCancelled`, `ShowHint`, `Retry`, `Continue`, `Undo`,
+  `ChangeOpponentMove`, `OpponentMoveChosen(uci)`, `CancelOpponentMove`,
   `Restart`, `ResumeFrom(moveIndex)` (from the report: back to before one of your
   moves, to try something else), `Quit`.
 - **Setup**: `TrainingSetup(color, line, randomWhiteFirstMove, options)`. The setup

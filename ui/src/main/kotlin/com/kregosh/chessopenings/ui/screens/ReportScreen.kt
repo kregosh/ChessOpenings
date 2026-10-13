@@ -53,6 +53,9 @@ fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             MoveList(report.moves) { dispatch(TrainerAction.ResumeFrom(it)) }
+            if (report.moves.any { it.chosenByUser }) {
+                Text("Opponent moves in italics are ones you picked.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
 
             report.moves.forEachIndexed { i, m ->
                 val v = m.verdict ?: return@forEachIndexed
