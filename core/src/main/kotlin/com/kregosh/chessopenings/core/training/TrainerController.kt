@@ -62,6 +62,7 @@ class TrainerController(
         when (action) {
             is TrainerAction.Start -> start(action.setup)
             TrainerAction.Restart -> s.setup?.let(::start)
+            is TrainerAction.ResumeFrom -> if (s.phase == Phase.REPORT) resumeFrom(action.moveIndex)
             TrainerAction.Quit -> quit()
             is TrainerAction.SquareTapped -> if (s.phase == Phase.YOUR_MOVE) tap(action.square)
             is TrainerAction.PieceDropped -> if (s.phase == Phase.YOUR_MOVE) userMove(action.from, action.to, null)
@@ -248,6 +249,19 @@ class TrainerController(
 
     private fun afterUserMove() {
         if (sessionOver) finish() else botTurn()
+    }
+
+    private fun resumeFrom(index: Int) {
+        val moves = _state.value.moves
+        if (index !in startPlies until plies.size || !moves[index].byUser) return
+        cancelJobs()
+        // Keep the earlier moves and their verdicts; the move gone back to counts as a takeback.
+        while (plies.size > index) plies.removeAt(plies.lastIndex)
+        takebacks.clear()
+        takebacks[index] = moves[index].takebacks + 1
+        hintUsed = false
+        _state.update { it.copy(moves = moves.take(index), report = null, feedback = null, phase = Phase.YOUR_MOVE) }
+        refreshBoard()
     }
 
     private fun retry() {

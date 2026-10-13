@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.kregosh.chessopenings.chess.PieceType
@@ -211,14 +212,17 @@ private fun Actions(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun MoveList(moves: List<PlayedMove>) {
+fun MoveList(moves: List<PlayedMove>, onUserMoveClick: ((Int) -> Unit)? = null) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         moves.forEachIndexed { i, m ->
             val number = if (i % 2 == 0) "${i / 2 + 1}. " else ""
             val color = m.verdict?.let { qualityColor(it.quality) }
+            val clickable = onUserMoveClick != null && m.byUser && !m.startingLine
             Text(
                 number + m.san,
                 fontWeight = if (m.byUser) FontWeight.SemiBold else FontWeight.Normal,
+                textDecoration = if (clickable) TextDecoration.Underline else null,
+                modifier = if (clickable) Modifier.clickable { onUserMoveClick(i) } else Modifier,
                 color = when {
                     m.startingLine -> MaterialTheme.colorScheme.onSurfaceVariant
                     color != null -> color

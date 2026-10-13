@@ -260,7 +260,8 @@ class TrainerController(book: OpeningBook, engine: Engine, scope: CoroutineScope
   (moves played and total), whether undo is possible, report, error.
 - **`TrainerAction`**: `Start(setup)`, `SquareTapped`, `PieceDropped`,
   `PromotionChosen`, `PromotionCancelled`, `ShowHint`, `Retry`, `Continue`, `Undo`,
-  `Restart`, `Quit`.
+  `Restart`, `ResumeFrom(moveIndex)` (from the report: back to before one of your
+  moves, to try something else), `Quit`.
 - **Setup**: `TrainingSetup(color, line, randomWhiteFirstMove, options)`. The setup
   screen asks `SetupCatalog` for the choices: the user's moves, the opponent's
   replies, Black's first moves, and the White first moves that fit a Black reply.

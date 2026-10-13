@@ -163,6 +163,37 @@ class TrainerControllerTest {
     }
 
     @Test
+    fun reportMovesCanBeReplayedFromThere() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(moves = 2, feedback = FeedbackMode.END))))
+        c.move("Nf3")
+        advanceUntilIdle()
+        c.move("Bc4")
+        advanceUntilIdle()
+        assertEquals(Phase.REPORT, c.s.phase)
+
+        // Starting-line and bot moves can't be resumed from; nothing happens.
+        c.dispatch(TrainerAction.ResumeFrom(0))
+        c.dispatch(TrainerAction.ResumeFrom(3))
+        assertEquals(Phase.REPORT, c.s.phase)
+
+        // Back to before 3.Bc4 (index 4): Nf3 keeps its verdict, the session continues.
+        c.dispatch(TrainerAction.ResumeFrom(4))
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertNull(c.s.report)
+        assertEquals(line("e4", "e5", "Nf3", "Nc6"), c.s.position)
+        assertEquals(Quality.BOOK, c.s.moves[2].verdict?.quality)
+        assertEquals(1, c.s.userMovesPlayed)
+        assertTrue(c.s.canUndo)
+        c.move("Bb5")
+        advanceUntilIdle()
+        val r = assertNotNull(c.s.report)
+        assertEquals("Bb5", r.moves[4].san)
+        assertEquals(1, r.moves[4].takebacks)
+        assertEquals(2, r.userMoves)
+    }
+
+    @Test
     fun blackWithARandomWhiteFirstMove() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(TrainingSetup(Color.BLACK, listOf("c7c5"), randomWhiteFirstMove = true)))

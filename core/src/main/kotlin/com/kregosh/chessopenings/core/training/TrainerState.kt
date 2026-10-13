@@ -110,6 +110,11 @@ sealed interface TrainerAction {
     data object Undo : TrainerAction
     /** Same setup again. */
     data object Restart : TrainerAction
+    /**
+     * From the report: go back to just before the user's move at [moveIndex] (an index into
+     * [TrainerState.moves]) and play on from there.
+     */
+    data class ResumeFrom(val moveIndex: Int) : TrainerAction
     /** Back to the setup screen. */
     data object Quit : TrainerAction
 }
