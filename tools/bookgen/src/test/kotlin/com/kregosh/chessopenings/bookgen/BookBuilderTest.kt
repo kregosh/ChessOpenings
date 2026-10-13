@@ -8,6 +8,7 @@ import java.io.File
 import java.io.StringWriter
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -105,6 +106,35 @@ class BookBuilderTest {
         assertEquals("Ruy Lopez", names[line("e4", "e5", "Nf3", "Nc6", "Bb5").key])
         // Reached by transposition: still named.
         assertEquals(names[line("d4", "Nf6", "c4", "e6").key], names[line("c4", "e6", "d4", "Nf6").key])
+    }
+
+    @Test
+    fun shardedEvaluationGivesTheSameBook() {
+        // Several positions, scored by a deterministic fake: the loss depends on the move.
+        val counts = HashMap<Long, PositionCounts>()
+        for (p in listOf(Position.start, line("e4"), line("d4"), line("e4", "e5"))) {
+            counts += counts(*p.legalMoves.take(6).mapIndexed { i, m -> Triple(m.uci, 300 - i * 40, 600 - i * 80) }.toTypedArray(), position = p)
+        }
+        val score = { uci: String -> -(uci.hashCode() and 0x7F) }
+        val evaluate = { jobs: List<Pair<String, List<String>>> -> jobs.map { (_, moves) -> Evaluation(0, moves.associateWith(score)) } }
+        val builder = BookBuilder()
+        val direct = builder.build(counts, emptyMap(), evaluate)
+
+        // Three shards, written to and read back from evals files, then merged.
+        val jobs = builder.jobs(builder.popular(counts))
+        val merged = HashMap<Long, Evaluation>()
+        for (shard in 0 until 3) {
+            val mine = jobs.filterIndexed { i, _ -> i % 3 == shard }
+            val text = StringWriter().also { w -> EvalsFile.write(mine.map { it.first }.zip(evaluate(mine.map { it.second })), w) }.toString()
+            EvalsFile.read(text.reader().buffered(), merged)
+        }
+        assertEquals(jobs.size, merged.size)
+        val sharded = builder.build(counts, emptyMap(), merged)
+        assertEquals(direct.entries().toList(), sharded.entries().toList())
+
+        // A missing shard is an error, not a silently unevaluated book.
+        val partial = merged.toMutableMap().apply { remove(jobs.first().first) }
+        assertFailsWith<IllegalArgumentException> { builder.build(counts, emptyMap(), partial) }
     }
 
     @Test

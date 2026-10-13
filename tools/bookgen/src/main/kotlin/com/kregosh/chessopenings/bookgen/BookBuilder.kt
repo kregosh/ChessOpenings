@@ -32,24 +32,17 @@ data class BookParams(
 }
 
 /** A move that passed the popularity test and still needs the engine's verdict. */
-private data class Candidate(val uci: String, val strong: Int, val club: Int, val popularForUser: Boolean, val popularForBot: Boolean)
+internal data class Candidate(val uci: String, val strong: Int, val club: Int, val popularForUser: Boolean, val popularForBot: Boolean)
 
 class BookBuilder(private val params: BookParams = BookParams(), private val log: (String) -> Unit = {}) {
 
     /**
-     * Builds the book from move counts. [evaluate] scores the popular moves of all kept
-     * positions at once (so it can run in parallel); null skips evaluation, and then
-     * popularity alone decides.
+     * The positions with moves popular enough to be considered, with their FEN and those
+     * moves, in ascending key order (so separate evaluation jobs agree on it).
      */
-    fun build(
-        counts: Map<Long, PositionCounts>,
-        names: Map<Long, String>,
-        evaluate: ((List<Pair<String, List<String>>>) -> List<Evaluation>)?,
-        metadata: Map<String, String> = emptyMap(),
-    ): OpeningBook {
-        // 1. Popularity: which moves are common enough in each band.
+    internal fun popular(counts: Map<Long, PositionCounts>): LinkedHashMap<Long, Pair<String, List<Candidate>>> {
         val popular = LinkedHashMap<Long, Pair<String, List<Candidate>>>()
-        for ((key, c) in counts) {
+        for ((key, c) in counts.entries.sortedBy { it.key }) {
             val fen = c.fen ?: continue
             val strongTotal = c.games(Band.STRONG)
             val clubTotal = c.games(Band.CLUB)
@@ -62,19 +55,58 @@ class BookBuilder(private val params: BookParams = BookParams(), private val log
                     popularForBot = clubTotal >= params.minClubGames && club >= clubTotal * params.botShare,
                 )
             }.filter { it.popularForUser || it.popularForBot }
-            if (candidates.isNotEmpty()) popular[key] = fen to candidates.sortedByDescending { it.strong + it.club }
+            if (candidates.isNotEmpty()) popular[key] = fen to candidates.sortedWith(compareByDescending<Candidate> { it.strong + it.club }.thenBy { it.uci })
         }
         log("positions with popular moves: ${popular.size} of ${counts.size}")
+        return popular
+    }
 
-        // 2. Soundness: the engine's verdict on each popular move.
-        val jobs = popular.values.map { (fen, candidates) -> fen to candidates.map { it.uci } }
-        val evaluations = evaluate?.invoke(jobs)
+    /** The evaluation jobs (FEN, moves to score) for [popular] positions, in the same order. */
+    internal fun jobs(popular: Map<Long, Pair<String, List<Candidate>>>): List<Pair<Long, Pair<String, List<String>>>> =
+        popular.map { (key, entry) -> key to (entry.first to entry.second.map { it.uci }) }
 
-        // 3. Classify and keep what qualifies.
+    /**
+     * Builds the book from move counts. [evaluate] scores the popular moves of all kept
+     * positions at once (so it can run in parallel); null skips evaluation, and then
+     * popularity alone decides.
+     */
+    fun build(
+        counts: Map<Long, PositionCounts>,
+        names: Map<Long, String>,
+        evaluate: ((List<Pair<String, List<String>>>) -> List<Evaluation>)?,
+        metadata: Map<String, String> = emptyMap(),
+    ): OpeningBook {
+        val popular = popular(counts)
+        val evaluations = evaluate?.let { e ->
+            val jobs = jobs(popular)
+            jobs.map { it.first }.zip(e(jobs.map { it.second })).toMap()
+        }
+        return classify(popular, names, evaluations, metadata)
+    }
+
+    /** Builds the book from counts and evaluations computed elsewhere (e.g. by sharded jobs). */
+    fun build(
+        counts: Map<Long, PositionCounts>,
+        names: Map<Long, String>,
+        evaluations: Map<Long, Evaluation>,
+        metadata: Map<String, String> = emptyMap(),
+    ): OpeningBook {
+        val popular = popular(counts)
+        val missing = popular.keys.count { it !in evaluations }
+        require(missing == 0) { "$missing of ${popular.size} positions have no evaluation; were all shards built with the same counts and thresholds?" }
+        return classify(popular, names, evaluations, metadata)
+    }
+
+    private fun classify(
+        popular: Map<Long, Pair<String, List<Candidate>>>,
+        names: Map<Long, String>,
+        evaluations: Map<Long, Evaluation>?,
+        metadata: Map<String, String>,
+    ): OpeningBook {
         val positions = HashMap<Long, List<BookMove>>()
-        popular.entries.forEachIndexed { i, (key, entry) ->
+        for ((key, entry) in popular) {
             val (fen, candidates) = entry
-            val eval = evaluations?.get(i)
+            val eval = evaluations?.get(key)
             val position = Position.fromFen(fen)
             val moves = candidates.mapNotNull { c ->
                 val loss = eval?.loss(c.uci)

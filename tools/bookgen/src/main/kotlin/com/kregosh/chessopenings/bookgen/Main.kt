@@ -24,11 +24,17 @@ private const val USAGE = """bookgen: builds the opening book (book.bin) from ga
   bookgen build --counts counts.txt[,more.txt] --openings data/openings --out book.bin [options]
       Applies the thresholds, evaluates with Stockfish and writes the book.
       --stockfish CMD      engine command; without it, moves aren't evaluated
+      --evals A.txt[,B.txt] evaluations from evaluate shards, instead of --stockfish
       --depth N            search depth (16)
       --threads N          engine processes in parallel (number of CPUs)
       --source TEXT        description of the game data, stored in the book
       --min-strong-games, --min-club-games, --user-share, --bot-share,
       --user-max-loss, --bot-max-loss    see BookParams
+
+  bookgen evaluate --counts counts.txt[,more.txt] --stockfish CMD --shard I --shards N --out evals-I.txt [options]
+      Evaluates every Nth position (shard I of N, from 0) for a later build --evals,
+      so the slow engine work can run as parallel jobs. Takes the same thresholds
+      as build (they decide which positions need evaluating) and --depth, --threads.
 
   bookgen dump --book book.bin [--line "e4 e5 Nf3"]
       Prints the book's metadata and the moves after the given line."""
@@ -43,6 +49,7 @@ fun main(args: Array<String>) {
         when (args[0]) {
             "count" -> count(options, files)
             "build" -> build(options)
+            "evaluate" -> evaluate(options)
             "dump" -> dump(options)
             else -> fail("Unknown command '${args[0]}'")
         }
@@ -121,10 +128,40 @@ private fun count(o: Map<String, String>, files: List<String>) {
     log("wrote ${out.path}")
 }
 
-private fun build(o: Map<String, String>) {
+private fun readCounts(o: Map<String, String>): Map<Long, PositionCounts> {
     val counts = HashMap<Long, PositionCounts>()
     for (path in o.required("counts").split(',')) File(path).bufferedReader().use { CountsFile.read(it, counts) }
     log("positions in counts: ${counts.size}")
+    return counts
+}
+
+private fun bookParams(o: Map<String, String>) = BookParams(
+    minStrongGames = o.int("min-strong-games", 100),
+    minClubGames = o.int("min-club-games", 200),
+    userShare = o.double("user-share", 0.05),
+    botShare = o.double("bot-share", 0.03),
+    userMaxLoss = o.int("user-max-loss", 40),
+    botMaxLoss = o.int("bot-max-loss", 80),
+)
+
+private fun evaluate(o: Map<String, String>) {
+    val shard = o.int("shard", 0)
+    val shards = o.int("shards", 1)
+    require(shards >= 1 && shard in 0 until shards) { "--shard must be in 0 until --shards" }
+    val cmd = o.required("stockfish")
+    val depth = o.int("depth", 16)
+    val threads = o.int("threads", Runtime.getRuntime().availableProcessors())
+    val builder = BookBuilder(bookParams(o), ::log)
+    val jobs = builder.jobs(builder.popular(readCounts(o))).filterIndexed { i, _ -> i % shards == shard }
+    log("shard $shard of $shards: evaluating ${jobs.size} positions at depth $depth with $threads engines")
+    val results = evaluateAll(jobs.map { it.second }, threads, { UciEngine(cmd.split(' '), depth) }, ::log)
+    val out = File(o.required("out"))
+    out.bufferedWriter().use { EvalsFile.write(jobs.map { it.first }.zip(results), it) }
+    log("wrote ${out.path}")
+}
+
+private fun build(o: Map<String, String>) {
+    val counts = readCounts(o)
 
     val namesDir = File(o.required("openings"))
     val names = OpeningNames.read(
@@ -132,14 +169,7 @@ private fun build(o: Map<String, String>) {
     )
     log("opening names: ${names.size}")
 
-    val params = BookParams(
-        minStrongGames = o.int("min-strong-games", 100),
-        minClubGames = o.int("min-club-games", 200),
-        userShare = o.double("user-share", 0.05),
-        botShare = o.double("bot-share", 0.03),
-        userMaxLoss = o.int("user-max-loss", 40),
-        botMaxLoss = o.int("bot-max-loss", 80),
-    )
+    val params = bookParams(o)
     val depth = o.int("depth", 16)
     val evaluate = o["stockfish"]?.let { cmd ->
         val threads = o.int("threads", Runtime.getRuntime().availableProcessors());
@@ -148,12 +178,20 @@ private fun build(o: Map<String, String>) {
             evaluateAll(jobs, threads, { UciEngine(cmd.split(' '), depth) }, ::log)
         }
     }
+    val evals = o["evals"]?.let { paths ->
+        val all = HashMap<Long, Evaluation>()
+        for (path in paths.split(',')) File(path).bufferedReader().use { EvalsFile.read(it, all) }
+        log("evaluations read: ${all.size}")
+        all
+    }
+    require(evals == null || evaluate == null) { "Give --stockfish or --evals, not both" }
     val metadata = buildMap {
         put("built", LocalDate.now().toString())
         o["source"]?.let { put("source", it) }
-        if (evaluate != null) put("depth", "$depth")
+        if (evaluate != null || evals != null) put("depth", "$depth")
     }
-    val book = BookBuilder(params, ::log).build(counts, names, evaluate, metadata)
+    val builder = BookBuilder(params, ::log)
+    val book = if (evals != null) builder.build(counts, names, evals, metadata) else builder.build(counts, names, evaluate, metadata)
     val out = File(o.required("out"))
     out.writeBytes(BookCodec.encode(book))
     log("wrote ${out.path}: ${out.length() / 1024} KB")

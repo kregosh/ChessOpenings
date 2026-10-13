@@ -1,24 +1,29 @@
 name: Build opening book
 
-# Manual run: streams a month of Lichess games, builds data/book.bin and pushes it to a
-# new branch (book/<run number>) for review in a pull request.
+# Manual run: streams Lichess months (one counting job each), evaluates the popular
+# positions with Stockfish in parallel shards, builds data/book.bin and pushes it to a new
+# branch (book/<run number>) for review in a pull request.
 on:
   workflow_dispatch:
     inputs:
       months:
-        description: "Lichess database months, comma-separated (e.g. 2026-08)"
+        description: "Lichess database months, comma-separated (e.g. 2026-07,2026-08)"
         required: true
-        default: "2026-08"
+        default: "2026-07,2026-08,2026-09"
       max_games:
         description: "Games to read per month (strong games are ~5% of them)"
         required: true
-        default: "3000000"
+        default: "10000000"
       depth:
         description: "Stockfish search depth"
         required: true
         default: "16"
+      shards:
+        description: "Parallel Stockfish jobs"
+        required: true
+        default: "8"
       extra_build_args:
-        description: "Extra arguments for 'bookgen build' (thresholds, e.g. --user-share 0.04)"
+        description: "Extra bookgen thresholds for evaluate and build (e.g. --user-share 0.04)"
         required: false
         default: ""
 
@@ -26,43 +31,113 @@ permissions:
   contents: write
 
 jobs:
-  book:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      months: ${{ steps.plan.outputs.months }}
+      shards: ${{ steps.plan.outputs.shards }}
+    steps:
+      - id: plan
+        env:
+          MONTHS: ${{ inputs.months }}
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          months=$(echo "$MONTHS" | tr ',' '\n' | sed 's/ //g' | grep . | jq -R . | jq -cs .)
+          shards=$(seq 0 $((SHARDS - 1)) | jq -cs .)
+          echo "months=$months" >> "$GITHUB_OUTPUT"
+          echo "shards=$shards" >> "$GITHUB_OUTPUT"
+
+  count:
+    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 350
-
+    strategy:
+      matrix:
+        month: ${{ fromJSON(needs.plan.outputs.months) }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
           cache: gradle
-
-      - name: Install zstd and Stockfish
-        run: sudo apt-get update && sudo apt-get install -y zstd stockfish
-
       - name: Build bookgen
         run: ./gradlew --no-daemon :bookgen:installDist
-
       - name: Count moves
         env:
-          MONTHS: ${{ inputs.months }}
+          MONTH: ${{ matrix.month }}
           MAX_GAMES: ${{ inputs.max_games }}
         run: |
           # bookgen stops reading after MAX_GAMES, which ends the download early on purpose.
           set +o pipefail
-          files=""
-          for month in ${MONTHS//,/ }; do
-            curl -sSL "https://database.lichess.org/standard/lichess_db_standard_rated_${month}.pgn.zst" \
-              | zstd -dc \
-              | tools/bookgen/build/install/bookgen/bin/bookgen count --out "counts-${month}.txt" --max-games "$MAX_GAMES"
-            test -s "counts-${month}.txt"
-            files="${files:+$files,}counts-${month}.txt"
-          done
-          echo "COUNTS=$files" >> "$GITHUB_ENV"
+          # A lower --min-write than the build's thresholds: positions add up across months.
+          curl -sSL "https://database.lichess.org/standard/lichess_db_standard_rated_${MONTH}.pgn.zst" \
+            | zstd -dc \
+            | tools/bookgen/build/install/bookgen/bin/bookgen count --out "counts-${MONTH}.txt" --max-games "$MAX_GAMES" --min-write 20
+          test -s "counts-${MONTH}.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: counts-${{ matrix.month }}
+          path: counts-${{ matrix.month }}.txt
 
+  evaluate:
+    needs: [plan, count]
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+      - name: Install Stockfish
+        run: sudo apt-get update && sudo apt-get install -y stockfish
+      - name: Build bookgen
+        run: ./gradlew --no-daemon :bookgen:installDist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: counts-*
+          merge-multiple: true
+      - name: Evaluate shard
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ inputs.shards }}
+          DEPTH: ${{ inputs.depth }}
+          EXTRA: ${{ inputs.extra_build_args }}
+        run: |
+          counts=$(ls counts-*.txt | paste -sd, -)
+          tools/bookgen/build/install/bookgen/bin/bookgen evaluate \
+            --counts "$counts" --stockfish /usr/games/stockfish --depth "$DEPTH" \
+            --shard "$SHARD" --shards "$SHARDS" --out "evals-${SHARD}.txt" $EXTRA
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evals-${{ matrix.shard }}
+          path: evals-${{ matrix.shard }}.txt
+
+  build:
+    needs: [count, evaluate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+      - name: Build bookgen
+        run: ./gradlew --no-daemon :bookgen:installDist
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: counts-*
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: evals-*
+          merge-multiple: true
       - name: Build book
         env:
           DEPTH: ${{ inputs.depth }}
@@ -70,24 +145,21 @@ jobs:
           MAX_GAMES: ${{ inputs.max_games }}
           EXTRA: ${{ inputs.extra_build_args }}
         run: |
+          counts=$(ls counts-*.txt | paste -sd, -)
+          evals=$(ls evals-*.txt | paste -sd, -)
           tools/bookgen/build/install/bookgen/bin/bookgen build \
-            --counts "$COUNTS" --openings data/openings --out data/book.bin \
-            --stockfish /usr/games/stockfish --depth "$DEPTH" \
-            --source "Lichess rated games ${MONTHS}, first ${MAX_GAMES} per month" $EXTRA 2>&1 | tee build.log
+            --counts "$counts" --evals "$evals" --openings data/openings --out data/book.bin \
+            --depth "$DEPTH" --source "Lichess rated games ${MONTHS}, first ${MAX_GAMES} per month" $EXTRA 2>&1 | tee build.log
           for line in "" "e4" "d4" "e4 e5" "e4 c5" "d4 d5"; do
             tools/bookgen/build/install/bookgen/bin/bookgen dump --book data/book.bin --line "$line"
           done | tee dump.txt
-
-      - name: Upload counts and logs
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: book-${{ github.run_number }}
           path: |
-            counts-*.txt
             build.log
             dump.txt
             data/book.bin
-
       - name: Push book to a branch
         run: |
           git config user.name "github-actions[bot]"
