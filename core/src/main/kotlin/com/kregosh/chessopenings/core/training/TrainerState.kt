@@ -16,6 +16,8 @@ enum class Phase {
     CHECKING,
     /** Instant mode: waiting for Retry or Continue after a non-book move. */
     FEEDBACK,
+    /** The user is picking the opponent's move instead of the bot's. */
+    CHOOSE_OPPONENT_MOVE,
     /** Session over; grading the moves for the report. */
     ANALYZING,
     REPORT,
@@ -38,6 +40,8 @@ data class PlayedMove(
     /** How often the user took this move back (undo or retry) before playing it. */
     val takebacks: Int = 0,
     val hintUsed: Boolean = false,
+    /** An opponent move the user picked in place of the bot's. */
+    val chosenByUser: Boolean = false,
 )
 
 data class Feedback(
@@ -102,6 +106,10 @@ data class TrainerState(
     val userMovesPlayed: Int = 0,
     val userMovesTotal: Int = 0,
     val canUndo: Boolean = false,
+    /** The last move is the bot's (not the starting line's), so the user may replace it. */
+    val canChangeOpponentMove: Boolean = false,
+    /** While choosing the opponent's move: its book replies, most played first. */
+    val opponentChoices: List<Choice> = emptyList(),
     val report: Report? = null,
     /** Something went wrong (e.g. the engine failed); shown to the user. */
     val error: String? = null,
@@ -120,6 +128,12 @@ sealed interface TrainerAction {
     data object Continue : TrainerAction
     /** Take back the user's last move and the bot's reply. */
     data object Undo : TrainerAction
+    /** Take back the bot's last move and let the user pick the opponent's move instead. */
+    data object ChangeOpponentMove : TrainerAction
+    /** While choosing the opponent's move: play [uci] (from [TrainerState.opponentChoices]). */
+    data class OpponentMoveChosen(val uci: String) : TrainerAction
+    /** While choosing the opponent's move: put the bot's move back. */
+    data object CancelOpponentMove : TrainerAction
     /** Same setup again. */
     data object Restart : TrainerAction
     /**

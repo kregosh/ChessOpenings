@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
@@ -93,7 +94,9 @@ private fun BoardArea(state: TrainerState, dispatch: (TrainerAction) -> Unit, si
             selected = state.selected,
             targets = state.targets,
             arrows = state.arrows,
-            interactive = state.phase == Phase.YOUR_MOVE,
+            interactive = state.phase == Phase.YOUR_MOVE || state.phase == Phase.CHOOSE_OPPONENT_MOVE,
+            // While picking the opponent's move, its pieces are the ones that move.
+            movableColor = if (state.phase == Phase.CHOOSE_OPPONENT_MOVE) state.orientation.opposite else state.orientation,
             onTap = { dispatch(TrainerAction.SquareTapped(it)) },
             onDrop = { from, to -> dispatch(TrainerAction.PieceDropped(from, to)) },
             modifier = Modifier.fillMaxHeight(),
@@ -125,7 +128,7 @@ private fun Header(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
         Column(Modifier.weight(1f)) {
             Text(state.openingName ?: Strings.APP_NAME, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                "Move ${minOf(state.userMovesPlayed + if (state.phase == Phase.YOUR_MOVE) 1 else 0, state.userMovesTotal)} of ${state.userMovesTotal}",
+                "Move ${minOf(state.userMovesPlayed + if (state.phase == Phase.YOUR_MOVE || state.phase == Phase.CHOOSE_OPPONENT_MOVE) 1 else 0, state.userMovesTotal)} of ${state.userMovesTotal}",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -141,6 +144,7 @@ private fun StatusLine(state: TrainerState) {
         Phase.BOT_THINKING -> "The bot is thinking…"
         Phase.CHECKING -> "Checking your move…"
         Phase.FEEDBACK -> "Try again or continue?"
+        Phase.CHOOSE_OPPONENT_MOVE -> "Pick the opponent's move"
         Phase.ANALYZING -> "Session over, looking at your moves…"
         else -> return
     }
@@ -197,10 +201,40 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
 
 @Composable
 private fun Actions(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
+    if (state.phase == Phase.CHOOSE_OPPONENT_MOVE) {
+        OpponentChoiceCard(state, dispatch)
+        return
+    }
     if (state.phase != Phase.YOUR_MOVE) return
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         if (state.setup?.options?.hints == true) OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show good moves") }
         OutlinedButton(onClick = { dispatch(TrainerAction.Undo) }, enabled = state.canUndo) { Text("Undo") }
+        if (state.canChangeOpponentMove) {
+            OutlinedButton(onClick = { dispatch(TrainerAction.ChangeOpponentMove) }) { Text("Change opponent's move") }
+        }
+    }
+}
+
+@Composable
+private fun OpponentChoiceCard(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                "Move one of the opponent's pieces on the board" +
+                    if (state.opponentChoices.isEmpty()) "." else ", or pick a reply people play here:",
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (c in state.opponentChoices) {
+                    OutlinedButton(onClick = { dispatch(TrainerAction.OpponentMoveChosen(c.uci)) }) {
+                        Column {
+                            Text("${c.san}  ${(c.share * 100).toInt()}%", fontWeight = FontWeight.SemiBold)
+                            c.name?.let { Text(it.substringAfter(": ", it), style = MaterialTheme.typography.labelSmall) }
+                        }
+                    }
+                }
+            }
+            TextButton(onClick = { dispatch(TrainerAction.CancelOpponentMove) }) { Text("Cancel, keep the bot's move") }
+        }
     }
 }
 
@@ -248,6 +282,8 @@ fun MoveList(moves: List<PlayedMove>, onUserMoveClick: ((Int) -> Unit)? = null) 
             Text(
                 number + m.san,
                 fontWeight = if (m.byUser) FontWeight.SemiBold else FontWeight.Normal,
+                // Opponent moves the user picked instead of the bot.
+                fontStyle = if (m.chosenByUser) FontStyle.Italic else null,
                 textDecoration = if (clickable) TextDecoration.Underline else null,
                 modifier = if (clickable) Modifier.clickable { onUserMoveClick(i) } else Modifier,
                 color = when {

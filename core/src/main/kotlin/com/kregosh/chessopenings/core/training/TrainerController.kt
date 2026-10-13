@@ -49,6 +49,8 @@ class TrainerController(
     /** Takebacks per ply index, carried to whatever move is played there next. */
     private val takebacks = HashMap<Int, Int>()
     private var hintUsed = false
+    /** The bot's move taken back while the user picks the opponent's move (for Cancel). */
+    private var replacedBotMove: Move? = null
 
     private var sessionJob: Job? = null
     private var evalJob: Job? = null
@@ -64,9 +66,9 @@ class TrainerController(
             TrainerAction.Restart -> s.setup?.let(::start)
             is TrainerAction.ResumeFrom -> if (s.phase == Phase.REPORT) resumeFrom(action.moveIndex)
             TrainerAction.Quit -> quit()
-            is TrainerAction.SquareTapped -> if (s.phase == Phase.YOUR_MOVE) tap(action.square)
-            is TrainerAction.PieceDropped -> if (s.phase == Phase.YOUR_MOVE) userMove(action.from, action.to, null)
-            is TrainerAction.PromotionChosen -> s.pendingPromotion?.let { (from, to) -> userMove(from, to, action.type) }
+            is TrainerAction.SquareTapped -> if (s.phase in BOARD_PHASES) tap(action.square)
+            is TrainerAction.PieceDropped -> if (s.phase in BOARD_PHASES) boardMove(action.from, action.to, null)
+            is TrainerAction.PromotionChosen -> s.pendingPromotion?.let { (from, to) -> boardMove(from, to, action.type) }
             TrainerAction.PromotionCancelled -> _state.update { it.copy(pendingPromotion = null, selected = null, targets = emptySet()) }
             TrainerAction.ShowHint -> if (s.phase == Phase.YOUR_MOVE && setup.options.hints) showHint()
             TrainerAction.Retry -> if (s.phase == Phase.FEEDBACK) retry()
@@ -75,6 +77,15 @@ class TrainerController(
                 afterUserMove()
             }
             TrainerAction.Undo -> if (s.phase == Phase.YOUR_MOVE && s.canUndo) undo()
+            TrainerAction.ChangeOpponentMove -> if (s.phase == Phase.YOUR_MOVE && s.canChangeOpponentMove) changeOpponentMove()
+            is TrainerAction.OpponentMoveChosen -> if (s.phase == Phase.CHOOSE_OPPONENT_MOVE) {
+                Uci.parse(position, action.uci)?.let(::opponentMoveChosen)
+            }
+            TrainerAction.CancelOpponentMove -> if (s.phase == Phase.CHOOSE_OPPONENT_MOVE) {
+                replacedBotMove?.let(::play)
+                replacedBotMove = null
+                _state.update { it.copy(phase = Phase.YOUR_MOVE, opponentChoices = emptyList()) }
+            }
         }
     }
 
@@ -85,6 +96,7 @@ class TrainerController(
         plies.clear()
         takebacks.clear()
         hintUsed = false
+        replacedBotMove = null
 
         val line = if (newSetup.randomWhiteFirstMove) {
             val white = policy.whiteFirstMove(newSetup.line.first())
@@ -136,7 +148,7 @@ class TrainerController(
     // ── Moves ──────────────────────────────────────────────────────────────
 
     /** Plays [move] and updates everything derived from the move history. */
-    private fun play(move: Move, verdict: Verdict? = null) {
+    private fun play(move: Move, verdict: Verdict? = null, chosenByUser: Boolean = false) {
         val index = plies.size
         val before = position
         val byUser = before.sideToMove == setup.color
@@ -150,6 +162,7 @@ class TrainerController(
             verdict = verdict,
             takebacks = if (byUser) takebacks.remove(index) ?: 0 else 0,
             hintUsed = byUser && hintUsed,
+            chosenByUser = chosenByUser,
         )
         if (byUser) hintUsed = false
         _state.update { it.copy(moves = it.moves + played) }
@@ -184,6 +197,7 @@ class TrainerController(
                 openingName = name,
                 userMovesPlayed = userPliesPlayed,
                 canUndo = plies.size > startPlies && userPliesPlayed > 0,
+                canChangeOpponentMove = plies.size > startPlies && plies.last().first.sideToMove != setup.color,
             )
         }
         updateEval()
@@ -196,11 +210,11 @@ class TrainerController(
     private fun tap(square: Square) {
         val s = _state.value
         if (s.selected != null && square in s.targets) {
-            userMove(s.selected, square, null)
+            boardMove(s.selected, square, null)
             return
         }
         val piece = position.pieceAt(square)
-        if (piece != null && piece.color == setup.color && square != s.selected) {
+        if (piece != null && piece.color == position.sideToMove && square != s.selected) {
             val targets = position.legalMoves.filter { it.from == square }.map { it.to }.toSet()
             _state.update { it.copy(selected = square, targets = targets) }
         } else {
@@ -208,7 +222,8 @@ class TrainerController(
         }
     }
 
-    private fun userMove(from: Square, to: Square, promotion: PieceType?) {
+    /** A move made on the board: the user's own, or the opponent's while the user picks it. */
+    private fun boardMove(from: Square, to: Square, promotion: PieceType?) {
         val candidates = position.legalMoves.filter { it.from == from && it.to == to }
         if (candidates.isEmpty()) {
             _state.update { it.copy(selected = null, targets = emptySet(), pendingPromotion = null) }
@@ -223,7 +238,10 @@ class TrainerController(
         } else {
             candidates.single()
         }
+        if (_state.value.phase == Phase.CHOOSE_OPPONENT_MOVE) opponentMoveChosen(move) else userMove(move)
+    }
 
+    private fun userMove(move: Move) {
         val before = position
         val history = plies.toList()
         play(move)
@@ -262,6 +280,28 @@ class TrainerController(
         hintUsed = false
         _state.update { it.copy(moves = moves.take(index), report = null, feedback = null, phase = Phase.YOUR_MOVE) }
         refreshBoard()
+    }
+
+    private fun changeOpponentMove() {
+        cancelJobs()
+        val replaced = plies.last().second
+        takeBack()
+        replacedBotMove = replaced
+        val p = position
+        val moves = book.moves(p).sortedByDescending { it.clubGames + it.strongGames }
+        val total = moves.sumOf { it.clubGames + it.strongGames }.coerceAtLeast(1)
+        val choices = moves.mapNotNull { m ->
+            val move = m.toMove(p) ?: return@mapNotNull null
+            Choice(m.uci, San.write(p, move), (m.clubGames + m.strongGames).toDouble() / total, book.name(p.play(move)))
+        }
+        _state.update { it.copy(phase = Phase.CHOOSE_OPPONENT_MOVE, opponentChoices = choices, feedback = null) }
+    }
+
+    private fun opponentMoveChosen(move: Move) {
+        replacedBotMove = null
+        play(move, chosenByUser = true)
+        _state.update { it.copy(opponentChoices = emptyList()) }
+        if (position.legalMoves.isEmpty()) finish() else _state.update { it.copy(phase = Phase.YOUR_MOVE) }
     }
 
     private fun retry() {
@@ -395,6 +435,9 @@ class TrainerController(
     }
 
     private companion object {
+        /** Phases in which pieces can be moved on the board. */
+        val BOARD_PHASES = setOf(Phase.YOUR_MOVE, Phase.CHOOSE_OPPONENT_MOVE)
+
         const val HINT_BOOK_MOVES = 4
         /** Stockfish's own candidates considered. */
         const val HINT_LINES = 3

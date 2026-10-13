@@ -6,6 +6,7 @@ import com.kregosh.chessopenings.chess.Position
 import com.kregosh.chessopenings.chess.San
 import com.kregosh.chessopenings.core.book.OpeningBook
 import com.kregosh.chessopenings.core.engine.EngineDepths
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -18,6 +19,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+// advanceUntilIdle() is still marked experimental in kotlinx-coroutines-test.
+@OptIn(ExperimentalCoroutinesApi::class)
 class TrainerControllerTest {
     private val engine = FakeEngine()
 
@@ -191,6 +194,61 @@ class TrainerControllerTest {
         assertEquals("Bb5", r.moves[4].san)
         assertEquals(1, r.moves[4].takebacks)
         assertEquals(2, r.userMoves)
+    }
+
+    @Test
+    fun userCanPickTheOpponentsMoveInstead() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4")))
+        advanceUntilIdle()
+        val botMove = c.s.moves.last().san
+        assertTrue(c.s.canChangeOpponentMove)
+
+        // Choosing from the list of book replies.
+        c.dispatch(TrainerAction.ChangeOpponentMove)
+        assertEquals(Phase.CHOOSE_OPPONENT_MOVE, c.s.phase)
+        assertEquals(line("e4"), c.s.position)
+        assertEquals(listOf("e5", "c5"), c.s.opponentChoices.map { it.san })
+        assertEquals("Sicilian Defense", c.s.opponentChoices[1].name)
+        c.dispatch(TrainerAction.OpponentMoveChosen("c7c5"))
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(line("e4", "c5"), c.s.position)
+        assertTrue(c.s.moves.last().chosenByUser)
+        assertEquals("Sicilian Defense", c.s.openingName)
+        assertTrue(c.s.opponentChoices.isEmpty())
+
+        // Cancelling puts the bot's move back.
+        c.dispatch(TrainerAction.ChangeOpponentMove)
+        c.dispatch(TrainerAction.CancelOpponentMove)
+        assertEquals(line("e4", "c5"), c.s.position)
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+
+        // Any legal move can be played on the board, by tap or drag, for the opponent.
+        c.dispatch(TrainerAction.ChangeOpponentMove)
+        c.dispatch(TrainerAction.SquareTapped(sq("g8")))
+        assertEquals(setOf(sq("f6"), sq("h6")), c.s.targets)
+        c.dispatch(TrainerAction.PieceDropped(sq("a7"), sq("a6")))
+        assertEquals("a6", c.s.moves.last().san)
+        assertTrue(c.s.moves.last().chosenByUser)
+        c.dispatch(TrainerAction.PieceDropped(sq("e7"), sq("e5"))) // the opponent's piece: not the user's turn for it
+        assertEquals(line("e4", "a6"), c.s.position)
+
+        // The game goes on as usual.
+        c.move("d4")
+        advanceUntilIdle()
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(1, c.s.userMovesPlayed)
+        assertTrue(botMove.isNotEmpty())
+    }
+
+    @Test
+    fun startingLineMovesCantBeChanged() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4", "c5")))
+        assertFalse(c.s.canChangeOpponentMove)
+        c.dispatch(TrainerAction.ChangeOpponentMove)
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(line("e4", "c5"), c.s.position)
     }
 
     @Test
