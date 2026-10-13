@@ -316,8 +316,8 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 ## 8. `ui`: shared Compose screens
 
 - **Board**: drawn with Compose Canvas. Drag and tap-to-move, arrows, highlights,
-  promotion picker. Pieces: Lichess "cburnett" set (CC BY-SA 3.0, attribution in
-  an About screen).
+  promotion picker. Pieces: the classic Lichess "cburnett" set (GPLv2+), turned into Compose vector
+  images by `tools/pieces/generate_pieces.py`. Board: light blue and darker blue squares.
 - **Screens**: Setup (color, starting-line picker board with move popularity,
   opponent, options), Training (board, eval bar, feedback card, hint, move list),
   Report.
@@ -383,7 +383,8 @@ Every module below `ui` is unit-tested on the JVM; tests run in CI on every push
   Stockfish handle it. Worth a closer look before a Play Store release; this is
   not legal advice.
 - **Lichess game data and opening names**: CC0.
-- **cburnett pieces**: CC BY-SA 3.0 (attribution).
+- **cburnett pieces**: GPLv2+ as distributed by Lichess. The Wikimedia Commons originals
+  may also be available under a more permissive license; check before a store release.
 
 ## 13. Decisions
 

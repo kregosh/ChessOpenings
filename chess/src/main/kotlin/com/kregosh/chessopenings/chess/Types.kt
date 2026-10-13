@@ -1,5 +1,7 @@
 package com.kregosh.chessopenings.chess
 
+import kotlin.jvm.JvmInline
+
 enum class Color {
     WHITE,
     BLACK;

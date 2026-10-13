@@ -45,8 +45,19 @@ class OpeningBook(
     fun moves(position: Position): List<BookMove> = moves(position.key)
 
     fun moves(key: Long): List<BookMove> {
-        val i = keys.binarySearch(key)
-        return if (i >= 0) moves[i] else emptyList()
+        // Binary search by hand: LongArray.binarySearch is JVM-only.
+        var lo = 0
+        var hi = keys.size - 1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            val k = keys[mid]
+            when {
+                k < key -> lo = mid + 1
+                k > key -> hi = mid - 1
+                else -> return moves[mid]
+            }
+        }
+        return emptyList()
     }
 
     fun name(position: Position): String? = names[position.key]

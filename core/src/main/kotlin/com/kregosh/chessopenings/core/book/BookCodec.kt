@@ -33,7 +33,7 @@ object BookCodec {
         out.u16(VERSION)
 
         out.u16(book.metadata.size)
-        for ((k, v) in book.metadata.toSortedMap()) {
+        for ((k, v) in book.metadata.entries.sortedBy { it.key }) {
             out.string(k)
             out.string(v)
         }
@@ -53,7 +53,7 @@ object BookCodec {
         }
 
         out.u32(book.names.size)
-        for ((key, name) in book.names.toSortedMap()) {
+        for ((key, name) in book.names.entries.sortedBy { it.key }) {
             out.i64(key)
             out.string(name)
         }
@@ -62,7 +62,7 @@ object BookCodec {
 
     fun decode(bytes: ByteArray): OpeningBook {
         val r = ByteReader(bytes)
-        val magic = String(CharArray(4) { r.u8().toChar() })
+        val magic = CharArray(4) { r.u8().toChar() }.concatToString()
         require(magic == MAGIC) { "Not an opening book file" }
         val version = r.u16()
         require(version == VERSION) { "Unsupported book version $version" }

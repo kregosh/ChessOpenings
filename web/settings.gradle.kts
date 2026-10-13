@@ -2,15 +2,8 @@
 // other modules stays as it is; it compiles chess, core and ui from their folders.
 pluginManagement {
     repositories {
-        // Google's repository, for AndroidX's multiplatform libraries that Compose
-        // Multiplatform uses (maven.google.com is the same repository as google()).
-        maven("https://maven.google.com") {
-            content {
-                includeGroupByRegex("androidx.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("com\\.android.*")
-            }
-        }
+        // Compose Multiplatform pulls AndroidX's multiplatform libraries from Google's repository.
+        google()
         mavenCentral()
         gradlePluginPortal()
     }
@@ -18,15 +11,7 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        // Google's repository, for AndroidX's multiplatform libraries that Compose
-        // Multiplatform uses (maven.google.com is the same repository as google()).
-        maven("https://maven.google.com") {
-            content {
-                includeGroupByRegex("androidx.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("com\\.android.*")
-            }
-        }
+        google()
         mavenCentral()
     }
 }
