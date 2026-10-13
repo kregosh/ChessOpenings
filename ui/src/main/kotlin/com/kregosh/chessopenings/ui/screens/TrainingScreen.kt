@@ -155,6 +155,7 @@ private fun StatusLine(state: TrainerState) {
 @Composable
 fun qualityColor(q: Quality): Color = when (q) {
     Quality.BOOK -> QualityColors.book
+    Quality.BEST -> QualityColors.best
     Quality.PLAYABLE -> QualityColors.playable
     Quality.INACCURACY -> QualityColors.inaccuracy
     Quality.MISTAKE -> QualityColors.mistake
@@ -169,9 +170,14 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
         Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(6.dp).fillMaxHeight().background(color))
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                val san = feedback.move.san
                 Text(
-                    if (v.inBook) "${feedback.move.san}: ${Strings.praise(feedback.move.san.length + feedback.move.uci.hashCode())}"
-                    else "${feedback.move.san}: ${if (v.pastBook) "" else "not book · "}${Strings.quality(v.quality)}",
+                    when {
+                        v.inBook -> "$san: ${Strings.praise(san.length + feedback.move.uci.hashCode())}"
+                        v.quality == Quality.BEST && v.pastBook -> "$san: Best move! Stockfish agrees."
+                        v.quality == Quality.BEST -> "$san: not book, but Stockfish's top choice"
+                        else -> "$san: ${if (v.pastBook) "" else "not book · "}${Strings.quality(v.quality)}"
+                    },
                     fontWeight = FontWeight.Bold,
                     color = color,
                 )
@@ -179,7 +185,7 @@ private fun FeedbackCard(feedback: Feedback, dispatch: (TrainerAction) -> Unit) 
                 if (!v.inBook) {
                     if (v.bookMoves.isNotEmpty()) Text("Book moves here: ${v.bookMoves.take(4).joinToString(", ")}")
                     else Text("You're past the end of the book.", style = MaterialTheme.typography.bodySmall)
-                    v.bestMove?.let { best ->
+                    v.bestMove?.takeIf { v.quality != Quality.BEST }?.let { best ->
                         Text("Stockfish prefers $best" + (v.lossCp?.takeIf { it > 0 }?.let { " (this move costs ${Strings.pawns(it)})" } ?: ""))
                     }
                 }

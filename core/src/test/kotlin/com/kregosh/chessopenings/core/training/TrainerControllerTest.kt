@@ -117,7 +117,8 @@ class TrainerControllerTest {
     fun pastTheBookOnlyRealErrorsStopTheUser() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(white("e4", "e5", "Nf3", "Nc6")))
-        c.move("Bb5") // every move scores 0: playable, and the book has nothing here
+        engine.set(line("e4", "e5", "Nf3", "Nc6"), "Bc4", 20) // better than Bb5's 0
+        c.move("Bb5") // 20 cp worse: playable, and the book has nothing here
         advanceUntilIdle()
         assertEquals(Phase.YOUR_MOVE, c.s.phase)
         assertEquals(Quality.PLAYABLE, c.s.moves[4].verdict?.quality)

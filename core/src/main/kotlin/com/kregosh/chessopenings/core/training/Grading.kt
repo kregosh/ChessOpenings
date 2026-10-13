@@ -9,6 +9,8 @@ import com.kregosh.chessopenings.core.engine.Engine
 
 enum class Quality {
     BOOK,
+    /** Not book, but the engine's top choice (or scores just as well). */
+    BEST,
     PLAYABLE,
     INACCURACY,
     MISTAKE,
@@ -17,6 +19,7 @@ enum class Quality {
     companion object {
         /** Grade of a non-book move that loses [lossCp] centipawns against the best move. */
         fun fromLoss(lossCp: Int): Quality = when {
+            lossCp <= 0 -> BEST
             lossCp <= 30 -> PLAYABLE
             lossCp <= 90 -> INACCURACY
             lossCp <= 200 -> MISTAKE
@@ -60,7 +63,9 @@ class Grader(private val book: OpeningBook, private val engine: Engine, private 
             return Verdict(Quality.BOOK, bookSans, bookSans.firstOrNull(), played.lossCp, reasons.filter { it.kind.positive })
         }
         val loss = engineLoss(position, move)
-        return Verdict(Quality.fromLoss(loss.first), bookSans, loss.second, loss.first, reasons)
+        val quality = Quality.fromLoss(loss.first)
+        // The engine's own choice gets no warnings: whatever principle it bends, it's right here.
+        return Verdict(quality, bookSans, loss.second, loss.first, if (quality == Quality.BEST) reasons.filter { it.kind.positive } else reasons)
     }
 
     /** Loss of [move] against the engine's best, from one search scoring both. */

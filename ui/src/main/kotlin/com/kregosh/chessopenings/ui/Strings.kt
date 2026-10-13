@@ -11,6 +11,7 @@ object Strings {
 
     fun quality(q: Quality): String = when (q) {
         Quality.BOOK -> "Book move"
+        Quality.BEST -> "Best move"
         Quality.PLAYABLE -> "Playable"
         Quality.INACCURACY -> "Inaccuracy"
         Quality.MISTAKE -> "Mistake"

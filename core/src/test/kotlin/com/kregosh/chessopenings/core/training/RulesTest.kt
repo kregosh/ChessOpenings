@@ -55,7 +55,8 @@ class RulesTest {
 
     @Test
     fun qualityThresholds() {
-        assertEquals(Quality.PLAYABLE, Quality.fromLoss(0))
+        assertEquals(Quality.BEST, Quality.fromLoss(0))
+        assertEquals(Quality.PLAYABLE, Quality.fromLoss(1))
         assertEquals(Quality.PLAYABLE, Quality.fromLoss(30))
         assertEquals(Quality.INACCURACY, Quality.fromLoss(31))
         assertEquals(Quality.MISTAKE, Quality.fromLoss(200))
@@ -91,11 +92,19 @@ class RulesTest {
         assertTrue(ReasonKind.EARLY_QUEEN in qh5.reasons.map { it.kind })
         assertEquals(Quality.BLUNDER, grader.grade(p, San.parse(p, "Ke2")!!, emptyList()).quality)
 
-        // Past the end of the book: graded by the engine alone.
+        // Past the end of the book: graded by the engine alone. The engine's own top move is
+        // "best" and gets no warnings, even one that breaks a principle (Ba6 hangs a bishop).
         val deep = line("e4", "e5", "Nf3", "Nc6")
-        val v = grader.grade(deep, San.parse(deep, "Bb5")!!, emptyList())
-        assertTrue(v.pastBook)
-        assertEquals(Quality.PLAYABLE, v.quality)
+        engine.set(deep, "Bb5", 30)
+        engine.set(deep, "Bc4", 25)
+        engine.set(deep, "Ba6", 30)
+        val bb5 = grader.grade(deep, San.parse(deep, "Bb5")!!, emptyList())
+        assertTrue(bb5.pastBook)
+        assertEquals(Quality.BEST, bb5.quality)
+        assertEquals(Quality.PLAYABLE, grader.grade(deep, San.parse(deep, "Bc4")!!, emptyList()).quality)
+        val ba6 = grader.grade(deep, San.parse(deep, "Ba6")!!, emptyList())
+        assertEquals(Quality.BEST, ba6.quality)
+        assertTrue(ba6.reasons.all { it.kind.positive })
     }
 
     @Test

@@ -21,6 +21,7 @@ object BoardColors {
 /** Verdict colors, from "book" green to "blunder" red. */
 object QualityColors {
     val book = Color(0xFF2E9E5B)
+    val best = Color(0xFF239A7A)
     val playable = Color(0xFF4A86C8)
     val inaccuracy = Color(0xFFD9A520)
     val mistake = Color(0xFFE07B30)
