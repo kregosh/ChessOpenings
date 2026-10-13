@@ -233,78 +233,69 @@ Tests:
 
 ```kotlin
 interface Engine {
-    /** Evaluation and best move(s) for [fen], searched to [depth]. */
-    suspend fun analyze(fen: String, depth: Int, multiPv: Int = 1): Analysis
+    /** Best [multiPv] lines for [fen] to [depth], optionally restricted to [searchMoves]. */
+    suspend fun analyze(fen: String, depth: Int, searchMoves: List<String> = emptyList(), multiPv: Int = 1): List<EngineLine>
 }
-
-interface BookSource {
-    /** The raw book.bin bytes, from Android assets or a web fetch. */
-    suspend fun load(): ByteArray
-}
-
-interface SettingsStore {
-    fun load(): TrainerSettings
-    fun save(settings: TrainerSettings)
-}
-// Later: ProgressStore for streaks, statistics and achievements.
 ```
+
+Platforms also load `book.bin` (Android assets, a fetch on the web) and store settings;
+both are plain app code around `core`. Later: a `ProgressStore` for streaks and
+achievements.
 
 ### 6.2 The contract between screens and logic
 
-The UI only reads `TrainerState` and sends `TrainerAction`. All rules, timing
-(bot delay) and engine calls live in `TrainerController`.
+The screens only read `TrainerState` and send `TrainerAction` to `TrainerController`
+(`core/training`). All rules, timing (bot delay) and engine calls live there.
 
 ```kotlin
-class TrainerController(engine: Engine, book: OpeningBook, scope: CoroutineScope) {
+class TrainerController(book: OpeningBook, engine: Engine, scope: CoroutineScope, …) {
     val state: StateFlow<TrainerState>
     fun dispatch(action: TrainerAction)
 }
-
-data class TrainerState(
-    val screen: Screen,                  // Setup, Training, Report
-    val board: BoardView,                // pieces, orientation, last move, arrows, selection
-    val phase: Phase,                    // YourMove, BotThinking, Checking, Feedback, Analyzing
-    val moves: List<PlayedMove>,         // with verdicts once known
-    val feedback: MoveFeedback?,         // verdict, reason, book alternatives
-    val eval: Eval?,                     // null unless the eval bar is on
-    val openingName: String?,
-    val setup: SetupState,               // starting line being picked, options
-)
-
-sealed interface TrainerAction {
-    data class SquareTapped(val square: Square) : TrainerAction
-    data class PieceDropped(val from: Square, val to: Square) : TrainerAction
-    data class PromotionChosen(val piece: PieceType) : TrainerAction
-    data object ShowHint : TrainerAction
-    data object Retry : TrainerAction
-    data object Continue : TrainerAction
-    data object Undo : TrainerAction
-    data class StartSession(val settings: TrainerSettings) : TrainerAction
-    // … setup actions, back to setup, train again
-}
 ```
 
-`ui` wraps the controller in a small androidx `ViewModel` so it survives
-configuration changes on Android. `core` itself has no androidx dependency, which
-keeps it usable from `bookgen` and plain JVM tests.
+- **`TrainerState`**: phase, position and orientation, last move, tap-to-move
+  selection and targets, pending promotion, move list (with verdicts, takebacks,
+  hints used), feedback, hint and arrows, eval (White's view), opening name, progress
+  (moves played and total), whether undo is possible, report, error.
+- **`TrainerAction`**: `Start(setup)`, `SquareTapped`, `PieceDropped`,
+  `PromotionChosen`, `PromotionCancelled`, `ShowHint`, `Retry`, `Continue`, `Undo`,
+  `Restart`, `Quit`.
+- **Setup**: `TrainingSetup(color, line, randomWhiteFirstMove, options)`. The setup
+  screen asks `SetupCatalog` for the choices: the user's moves, the opponent's
+  replies, Black's first moves, and the White first moves that fit a Black reply.
+  Each choice comes with SAN, popularity share and opening name.
+- **Feedback**: `Verdict(quality, bookMoves, bestMove, lossCp, reasons)`. Reasons are
+  enums (`DEVELOPS_PIECE`, `EARLY_QUEEN`, `BLOCKS_BISHOP`, `HANGS_PIECE`, …); `ui`
+  turns them into friendly text.
+
+`ui` wraps the controller in a small androidx `ViewModel` so it survives configuration
+changes on Android.
 
 ### 6.3 Session state machine
 
 ```
-Setup → (bot to move?) BotThinking → YourMove
-YourMove → move → Checking
-  Checking → book (or end mode)  → BotThinking | Analyzing
-  Checking → not book, instant   → Feedback → Retry → YourMove
-                                            → Continue → BotThinking | Analyzing
-BotThinking → YourMove | Analyzing (session length reached, or game over)
-YourMove → Undo → YourMove (your last move and the bot's reply taken back)
-Analyzing → Report
+Start → BOT_THINKING (bot to move) | YOUR_MOVE
+YOUR_MOVE → move → CHECKING (instant mode) → book: feedback note → BOT_THINKING | ANALYZING
+                                           → not book: FEEDBACK → Retry → YOUR_MOVE
+                                                                → Continue → BOT_THINKING | ANALYZING
+YOUR_MOVE → move (end mode) → BOT_THINKING | ANALYZING
+YOUR_MOVE → Undo → YOUR_MOVE (your last move and the bot's reply taken back)
+BOT_THINKING → YOUR_MOVE | ANALYZING (session length reached, or game over)
+ANALYZING → REPORT
 ```
 
-Grading: a book move is always "Book". Any other move is graded by the eval loss
-against the engine's best move: ≤30 cp Playable, ≤90 Inaccuracy, ≤200 Mistake,
-otherwise Blunder. In book positions the loss comes from `book.bin` where
-possible; elsewhere from a live engine search.
+**Grading.** A book move is always "Book" and needs no engine. Any other move is
+graded by its loss against the engine's best move: ≤30 cp Playable, ≤90 Inaccuracy,
+≤200 Mistake, otherwise Blunder. The best move and the played move are scored in one
+search, as in `bookgen`.
+
+**Feedback.** In instant mode, a non-book move where book moves exist always stops
+for Retry or Continue. Past the end of the book, only inaccuracies and worse stop the
+user.
+
+**Bot.** The bot plays a bot candidate weighted by club games. When there is none, it
+plays Stockfish's best move.
 
 ## 7. Engines (platform)
 
@@ -325,8 +316,8 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 ## 8. `ui`: shared Compose screens
 
 - **Board**: drawn with Compose Canvas. Drag and tap-to-move, arrows, highlights,
-  promotion picker. Pieces: Lichess "cburnett" set (CC BY-SA 3.0, attribution in
-  an About screen).
+  promotion picker. Pieces: the classic Lichess "cburnett" set (GPLv2+), turned into Compose vector
+  images by `tools/pieces/generate_pieces.py`. Board: light blue and darker blue squares.
 - **Screens**: Setup (color, starting-line picker board with move popularity,
   opponent, options), Training (board, eval bar, feedback card, hint, move list),
   Report.
@@ -392,7 +383,8 @@ Every module below `ui` is unit-tested on the JVM; tests run in CI on every push
   Stockfish handle it. Worth a closer look before a Play Store release; this is
   not legal advice.
 - **Lichess game data and opening names**: CC0.
-- **cburnett pieces**: CC BY-SA 3.0 (attribution).
+- **cburnett pieces**: GPLv2+ as distributed by Lichess. The Wikimedia Commons originals
+  may also be available under a more permissive license; check before a store release.
 
 ## 13. Decisions
 

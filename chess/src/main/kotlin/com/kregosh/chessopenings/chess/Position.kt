@@ -39,6 +39,34 @@ class Position internal constructor(
     fun findMove(from: Square, to: Square, promotion: PieceType? = null): Move? =
         legalMoves.firstOrNull { it.from == from && it.to == to && it.promotion == promotion }
 
+    /**
+     * Squares of [by]'s pieces that attack [square], whether or not capturing there would
+     * be legal (pins are ignored). Used to judge whether a piece is defended or hanging.
+     */
+    fun attackers(square: Square, by: Color): List<Square> {
+        val target = square.index
+        val byBlack = if (by == Color.BLACK) BLACK_BIT else 0
+        val result = ArrayList<Square>(4)
+        for (from in Attacks.pawn[if (by == Color.WHITE) 1 else 0][target]) {
+            if (board[from] == (PAWN or byBlack)) result += Square(from)
+        }
+        for (from in Attacks.knight[target]) if (board[from] == (KNIGHT or byBlack)) result += Square(from)
+        for (from in Attacks.king[target]) if (board[from] == (KING or byBlack)) result += Square(from)
+        for (dir in 0 until 8) {
+            val diagonal = dir >= 4
+            for (from in Attacks.rays[dir][target]) {
+                val c = board[from]
+                if (c == 0) continue
+                if (c and BLACK_BIT == byBlack) {
+                    val t = c and TYPE_MASK
+                    if (t == QUEEN || t == (if (diagonal) BISHOP else ROOK)) result += Square(from)
+                }
+                break
+            }
+        }
+        return result
+    }
+
     /** The position after [move], which must be one of [legalMoves]. */
     fun play(move: Move): Position {
         require(move in legalMoves) { "Illegal move $move in ${toFen()}" }

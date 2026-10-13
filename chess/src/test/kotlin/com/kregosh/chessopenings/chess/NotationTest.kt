@@ -75,6 +75,20 @@ class NotationTest {
     }
 
     @Test
+    fun attackers() {
+        // After 1.e4 e5 2.Nf3: e5 is attacked by the knight and defended by nothing yet.
+        val p = line("e4", "e5", "Nf3")
+        assertEquals(listOf("f3"), p.attackers(Square.parse("e5"), Color.WHITE).map { it.name })
+        assertEquals(emptyList(), p.attackers(Square.parse("e5"), Color.BLACK).map { it.name })
+        // Sliders stop at the first piece; pawns attack diagonally only.
+        val q = Position.fromFen("4k3/8/8/3p4/8/8/3Q4/R3K3 w - - 0 1")
+        assertEquals(setOf("d2"), q.attackers(Square.parse("d5"), Color.WHITE).map { it.name }.toSet())
+        assertEquals(setOf("a1", "d2"), q.attackers(Square.parse("a5"), Color.WHITE).map { it.name }.toSet())
+        assertEquals(setOf("d5"), q.attackers(Square.parse("e4"), Color.BLACK).map { it.name }.toSet())
+        assertTrue(q.attackers(Square.parse("d4"), Color.BLACK).isEmpty())
+    }
+
+    @Test
     fun gameEnd() {
         val mate = line("f3", "e5", "g4", "Qh4")
         assertTrue(mate.isCheckmate)
