@@ -21,7 +21,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -137,13 +136,6 @@ fun SetupScreen(catalog: SetupCatalog, initial: SetupSelection, onStart: (Traini
             setup?.let { PreviewBoard(it) }
 
             Section("Session") {
-                Text("Length: ${selection.options.moves} of your moves")
-                Slider(
-                    value = selection.options.moves.toFloat(),
-                    onValueChange = { selection = selection.copy(options = selection.options.copy(moves = it.toInt())) },
-                    valueRange = 5f..10f,
-                    steps = 4,
-                )
                 Text("Feedback")
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     listOf(FeedbackMode.INSTANT to "After every move", FeedbackMode.END to "At the end").forEachIndexed { i, (mode, label) ->

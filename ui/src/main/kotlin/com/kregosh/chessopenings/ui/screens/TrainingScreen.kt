@@ -127,13 +127,27 @@ private fun Header(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(state.openingName ?: Strings.APP_NAME, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Text(
-                "Move ${minOf(state.userMovesPlayed + if (state.phase == Phase.YOUR_MOVE || state.phase == Phase.CHOOSE_OPPONENT_MOVE) 1 else 0, state.userMovesTotal)} of ${state.userMovesTotal}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(progressText(state), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (state.userMovesPlayed > 0 && state.phase in FINISHABLE) {
+            TextButton(onClick = { dispatch(TrainerAction.Finish) }) { Text("See summary") }
         }
         TextButton(onClick = { dispatch(TrainerAction.Quit) }) { Text("New setup") }
+    }
+}
+
+/** Phases in which the session can be ended early (the controller accepts Finish then). */
+private val FINISHABLE = setOf(
+    Phase.YOUR_MOVE, Phase.KEEP_GOING, Phase.BOT_THINKING, Phase.CHECKING, Phase.FEEDBACK, Phase.CHOOSE_OPPONENT_MOVE,
+)
+
+private fun progressText(state: TrainerState): String {
+    val played = state.userMovesPlayed
+    val left = state.movesLeft
+    return when {
+        !state.pastBook -> if (played == 0) "Following the book" else "$played ${if (played == 1) "move" else "moves"} played · following the book"
+        left != null && left > 0 -> "Past the book · $left more ${if (left == 1) "move" else "moves"}"
+        else -> "Past the book"
     }
 }
 
@@ -205,12 +219,39 @@ private fun Actions(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
         OpponentChoiceCard(state, dispatch)
         return
     }
-    if (state.phase != Phase.YOUR_MOVE) return
+    if (state.phase == Phase.KEEP_GOING) KeepGoingCard(state, dispatch)
+    if (state.phase != Phase.YOUR_MOVE && state.phase != Phase.KEEP_GOING) return
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        if (state.setup?.options?.hints == true) OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show good moves") }
+        if (state.phase == Phase.YOUR_MOVE && state.setup?.options?.hints == true) {
+            OutlinedButton(onClick = { dispatch(TrainerAction.ShowHint) }) { Text("Show good moves") }
+        }
         OutlinedButton(onClick = { dispatch(TrainerAction.Undo) }, enabled = state.canUndo) { Text("Undo") }
         if (state.canChangeOpponentMove) {
             OutlinedButton(onClick = { dispatch(TrainerAction.ChangeOpponentMove) }) { Text("Change opponent's move") }
+        }
+    }
+}
+
+@Composable
+private fun KeepGoingCard(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
+    val firstTime = state.movesLeft == null
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = QualityColors.book.copy(alpha = 0.12f))) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(if (firstTime) "That's the end of the book!" else "Keep going?", fontWeight = FontWeight.Bold, color = QualityColors.book)
+            Text(
+                if (firstTime) {
+                    "There's no more opening theory for this position. From here on the bot plays Stockfish's moves. " +
+                        "Play on to practice the middlegame, or look at how you did."
+                } else {
+                    "You've played your extra moves. Want some more?"
+                },
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (n in listOf(3, 5, 10)) {
+                    OutlinedButton(onClick = { dispatch(TrainerAction.PlayOn(n)) }) { Text("$n more moves") }
+                }
+                Button(onClick = { dispatch(TrainerAction.Finish) }) { Text("See summary") }
+            }
         }
     }
 }

@@ -18,6 +18,12 @@ enum class Phase {
     FEEDBACK,
     /** The user is picking the opponent's move instead of the bot's. */
     CHOOSE_OPPONENT_MOVE,
+    /**
+     * The user's turn, but first they choose: play on ([TrainerAction.PlayOn]) or see the
+     * report ([TrainerAction.Finish]). Asked when the book runs out, and again once the
+     * extra moves are played.
+     */
+    KEEP_GOING,
     /** Session over; grading the moves for the report. */
     ANALYZING,
     REPORT,
@@ -75,6 +81,8 @@ data class Report(
     val moves: List<PlayedMove>,
     val userMoves: Int,
     val bookMoves: Int,
+    /** The user's moves played where the book had moves for them: what [bookMoves] is out of. */
+    val bookPositions: Int,
     val takebacks: Int,
     val hintsUsed: Int,
     val openingName: String?,
@@ -102,9 +110,12 @@ data class TrainerState(
     /** Eval bar value from White's point of view; null when off or not yet known. */
     val eval: Score? = null,
     val openingName: String? = null,
-    /** The user's moves played after the starting line, and how many the session has. */
+    /** The user's moves played after the starting line. */
     val userMovesPlayed: Int = 0,
-    val userMovesTotal: Int = 0,
+    /** The book has run out: the bot plays Stockfish's moves and the user plays on by choice. */
+    val pastBook: Boolean = false,
+    /** Past the book, how many of the extra moves the user asked for are left; null before they chose. */
+    val movesLeft: Int? = null,
     val canUndo: Boolean = false,
     /** The last move is the bot's (not the starting line's), so the user may replace it. */
     val canChangeOpponentMove: Boolean = false,
@@ -134,6 +145,10 @@ sealed interface TrainerAction {
     data class OpponentMoveChosen(val uci: String) : TrainerAction
     /** While choosing the opponent's move: put the bot's move back. */
     data object CancelOpponentMove : TrainerAction
+    /** When asked whether to keep going: play [moves] more of the user's moves. */
+    data class PlayOn(val moves: Int) : TrainerAction
+    /** End the session now and show the report. */
+    data object Finish : TrainerAction
     /** Same setup again. */
     data object Restart : TrainerAction
     /**
