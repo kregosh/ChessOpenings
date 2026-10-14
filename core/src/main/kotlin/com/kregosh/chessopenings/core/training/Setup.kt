@@ -10,16 +10,10 @@ import com.kregosh.chessopenings.core.book.OpeningBook
 enum class FeedbackMode { INSTANT, END }
 
 data class SessionOptions(
-    /** How many of the user's own moves a session lasts, counted after the starting line. */
-    val moves: Int = 8,
     val feedback: FeedbackMode = FeedbackMode.INSTANT,
     val hints: Boolean = true,
     val evalBar: Boolean = false,
-) {
-    init {
-        require(moves in 1..30) { "Session length out of range: $moves" }
-    }
-}
+)
 
 /**
  * What to train. [line] is the fixed starting line in UCI from the start position: the

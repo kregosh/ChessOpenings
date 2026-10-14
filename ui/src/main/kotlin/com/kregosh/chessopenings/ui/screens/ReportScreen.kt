@@ -34,9 +34,10 @@ fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(Strings.headline(report.bookMoves, report.userMoves), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(Strings.headline(report.bookMoves, report.bookPositions), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                "${report.bookMoves} of ${report.userMoves} moves were book" +
+                "${report.bookMoves} of ${report.bookPositions} moves were book" +
+                    (report.userMoves - report.bookPositions).let { past -> if (past > 0) " · $past past the book" else "" } +
                     (report.openingName?.let { " · $it" } ?: ""),
                 style = MaterialTheme.typography.titleMedium,
             )

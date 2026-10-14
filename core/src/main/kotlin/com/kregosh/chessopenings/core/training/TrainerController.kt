@@ -51,6 +51,10 @@ class TrainerController(
     private var hintUsed = false
     /** The bot's move taken back while the user picks the opponent's move (for Cancel). */
     private var replacedBotMove: Move? = null
+    /** Plies played when the book ran out for the user; null while still in the book. */
+    private var bookEndPly: Int? = null
+    /** Past the book: ask again once the user has played this many moves; null until they chose. */
+    private var playUntil: Int? = null
 
     private var sessionJob: Job? = null
     private var evalJob: Job? = null
@@ -76,15 +80,22 @@ class TrainerController(
                 _state.update { it.copy(feedback = it.feedback?.copy(blocking = false)) }
                 afterUserMove()
             }
-            TrainerAction.Undo -> if (s.phase == Phase.YOUR_MOVE && s.canUndo) undo()
-            TrainerAction.ChangeOpponentMove -> if (s.phase == Phase.YOUR_MOVE && s.canChangeOpponentMove) changeOpponentMove()
+            TrainerAction.Undo -> if (s.phase in TURN_PHASES && s.canUndo) undo()
+            TrainerAction.ChangeOpponentMove -> if (s.phase in TURN_PHASES && s.canChangeOpponentMove) changeOpponentMove()
+            is TrainerAction.PlayOn -> if (s.phase == Phase.KEEP_GOING && action.moves > 0) {
+                playUntil = userPliesPlayed + action.moves
+                _state.update { it.copy(phase = Phase.YOUR_MOVE) }
+                refreshProgress()
+            }
+            TrainerAction.Finish -> if (s.phase in FINISH_PHASES) finishNow()
             is TrainerAction.OpponentMoveChosen -> if (s.phase == Phase.CHOOSE_OPPONENT_MOVE) {
                 Uci.parse(position, action.uci)?.let(::opponentMoveChosen)
             }
             TrainerAction.CancelOpponentMove -> if (s.phase == Phase.CHOOSE_OPPONENT_MOVE) {
                 replacedBotMove?.let(::play)
                 replacedBotMove = null
-                _state.update { it.copy(phase = Phase.YOUR_MOVE, opponentChoices = emptyList()) }
+                _state.update { it.copy(opponentChoices = emptyList()) }
+                yourTurn()
             }
         }
     }
@@ -97,6 +108,8 @@ class TrainerController(
         takebacks.clear()
         hintUsed = false
         replacedBotMove = null
+        bookEndPly = null
+        playUntil = null
 
         val line = if (newSetup.randomWhiteFirstMove) {
             val white = policy.whiteFirstMove(newSetup.line.first())
@@ -120,13 +133,9 @@ class TrainerController(
         }
         startPlies = plies.size
 
-        _state.value = TrainerState(
-            setup = newSetup,
-            orientation = newSetup.color,
-            userMovesTotal = newSetup.options.moves,
-        )
+        _state.value = TrainerState(setup = newSetup, orientation = newSetup.color)
         refreshBoard()
-        if (p.sideToMove == newSetup.color) _state.update { it.copy(phase = Phase.YOUR_MOVE) } else botTurn()
+        if (p.sideToMove == newSetup.color) yourTurn() else botTurn()
     }
 
     private fun quit() {
@@ -143,7 +152,38 @@ class TrainerController(
 
     private val userPliesPlayed: Int get() = plies.indices.count { it >= startPlies && plies[it].first.sideToMove == setup.color }
 
-    private val sessionOver: Boolean get() = userPliesPlayed >= setup.options.moves || position.legalMoves.isEmpty()
+    /**
+     * The user is to move. While the book has moves for them, they just play on. Once it runs
+     * out, or the extra moves they asked for are played, they choose: more moves or the report.
+     */
+    private fun yourTurn() {
+        val p = position
+        if (p.legalMoves.isEmpty()) {
+            finish()
+            return
+        }
+        if (bookEndPly == null && grader.bookMoves(p).isEmpty()) bookEndPly = plies.size
+        val ask = bookEndPly != null && playUntil.let { it == null || userPliesPlayed >= it }
+        _state.update { it.copy(phase = if (ask) Phase.KEEP_GOING else Phase.YOUR_MOVE) }
+        refreshProgress()
+    }
+
+    /** Taken back to before the end of the book: in the book again, with no limit. */
+    private fun forgetBookEndIfBefore() {
+        if (bookEndPly?.let { plies.size < it } == true) {
+            bookEndPly = null
+            playUntil = null
+        }
+    }
+
+    private fun refreshProgress() {
+        _state.update {
+            it.copy(
+                pastBook = bookEndPly != null,
+                movesLeft = playUntil?.let { limit -> (limit - userPliesPlayed).coerceAtLeast(0) },
+            )
+        }
+    }
 
     // ── Moves ──────────────────────────────────────────────────────────────
 
@@ -172,6 +212,7 @@ class TrainerController(
     /** Removes the last ply; returns the removed move's record. */
     private fun takeBack(): PlayedMove {
         plies.removeAt(plies.lastIndex)
+        forgetBookEndIfBefore()
         val removed = _state.value.moves.last()
         _state.update { it.copy(moves = it.moves.dropLast(1)) }
         refreshBoard()
@@ -200,6 +241,7 @@ class TrainerController(
                 canChangeOpponentMove = plies.size > startPlies && plies.last().first.sideToMove != setup.color,
             )
         }
+        refreshProgress()
         updateEval()
     }
 
@@ -266,7 +308,7 @@ class TrainerController(
     }
 
     private fun afterUserMove() {
-        if (sessionOver) finish() else botTurn()
+        if (position.legalMoves.isEmpty()) finish() else botTurn()
     }
 
     private fun resumeFrom(index: Int) {
@@ -275,11 +317,15 @@ class TrainerController(
         cancelJobs()
         // Keep the earlier moves and their verdicts; the move gone back to counts as a takeback.
         while (plies.size > index) plies.removeAt(plies.lastIndex)
+        forgetBookEndIfBefore()
+        // Past the book, the user came back to play this move: let them, then ask again.
+        if (bookEndPly != null && playUntil.let { it == null || it <= userPliesPlayed }) playUntil = userPliesPlayed + 1
         takebacks.clear()
         takebacks[index] = moves[index].takebacks + 1
         hintUsed = false
-        _state.update { it.copy(moves = moves.take(index), report = null, feedback = null, phase = Phase.YOUR_MOVE) }
+        _state.update { it.copy(moves = moves.take(index), report = null, feedback = null) }
         refreshBoard()
+        yourTurn()
     }
 
     private fun changeOpponentMove() {
@@ -301,7 +347,7 @@ class TrainerController(
         replacedBotMove = null
         play(move, chosenByUser = true)
         _state.update { it.copy(opponentChoices = emptyList()) }
-        if (position.legalMoves.isEmpty()) finish() else _state.update { it.copy(phase = Phase.YOUR_MOVE) }
+        yourTurn()
     }
 
     private fun retry() {
@@ -309,7 +355,8 @@ class TrainerController(
         val removed = takeBack()
         takebacks[index] = removed.takebacks + 1
         if (removed.hintUsed) hintUsed = true
-        _state.update { it.copy(feedback = null, phase = Phase.YOUR_MOVE) }
+        _state.update { it.copy(feedback = null) }
+        yourTurn()
     }
 
     private fun undo() {
@@ -318,7 +365,8 @@ class TrainerController(
         val index = plies.lastIndex
         val removed = takeBack()
         takebacks[index] = removed.takebacks + 1
-        _state.update { it.copy(feedback = null, phase = Phase.YOUR_MOVE) }
+        _state.update { it.copy(feedback = null) }
+        yourTurn()
     }
 
     private fun botTurn() {
@@ -333,12 +381,23 @@ class TrainerController(
                 return@launchSafely
             }
             play(move)
-            if (sessionOver) finish() else _state.update { it.copy(phase = Phase.YOUR_MOVE) }
+            yourTurn()
         }
     }
 
+    /** The user ends the session early: whatever is in progress stops, the report follows. */
+    private fun finishNow() {
+        sessionJob?.cancel()
+        hintJob?.cancel()
+        replacedBotMove?.let(::play)
+        replacedBotMove = null
+        finish()
+    }
+
     private fun finish() {
-        _state.update { it.copy(phase = Phase.ANALYZING, selected = null, targets = emptySet()) }
+        _state.update {
+            it.copy(phase = Phase.ANALYZING, selected = null, targets = emptySet(), hint = null, arrows = emptyList(), opponentChoices = emptyList())
+        }
         sessionJob = launchSafely {
             val moves = _state.value.moves.toMutableList()
             for (i in moves.indices) {
@@ -353,6 +412,7 @@ class TrainerController(
                 moves = moves,
                 userMoves = user.size,
                 bookMoves = user.count { it.verdict?.inBook == true },
+                bookPositions = user.count { it.verdict?.pastBook == false },
                 takebacks = user.sumOf { it.takebacks },
                 hintsUsed = user.count { it.hintUsed },
                 openingName = _state.value.openingName,
@@ -437,6 +497,12 @@ class TrainerController(
     private companion object {
         /** Phases in which pieces can be moved on the board. */
         val BOARD_PHASES = setOf(Phase.YOUR_MOVE, Phase.CHOOSE_OPPONENT_MOVE)
+        /** The user's turn, playing or deciding whether to play on: they may take moves back. */
+        val TURN_PHASES = setOf(Phase.YOUR_MOVE, Phase.KEEP_GOING)
+        /** Phases in which the user may end the session and see the report. */
+        val FINISH_PHASES = setOf(
+            Phase.YOUR_MOVE, Phase.KEEP_GOING, Phase.BOT_THINKING, Phase.CHECKING, Phase.FEEDBACK, Phase.CHOOSE_OPPONENT_MOVE,
+        )
 
         const val HINT_BOOK_MOVES = 4
         /** Stockfish's own candidates considered. */

@@ -71,7 +71,7 @@ class TrainerControllerTest {
         assertEquals(Quality.BOOK, f.verdict.quality)
         assertFalse(f.blocking)
         assertEquals("Nc6", c.s.moves.last().san)
-        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(Phase.KEEP_GOING, c.s.phase) // the end of the test book
         assertEquals(1, c.s.userMovesPlayed)
         assertEquals("King's Knight Opening", c.s.openingName)
     }
@@ -110,7 +110,7 @@ class TrainerControllerTest {
         advanceUntilIdle()
         c.dispatch(TrainerAction.Continue)
         advanceUntilIdle()
-        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(Phase.KEEP_GOING, c.s.phase) // out of the book now
         assertEquals(4, c.s.moves.size) // e4 e5 Qh5 + the engine's reply
         assertEquals("Qh5", c.s.moves[2].san)
         assertFalse(c.s.feedback!!.blocking)
@@ -120,6 +120,9 @@ class TrainerControllerTest {
     fun pastTheBookOnlyRealErrorsStopTheUser() = runTest {
         val c = controller()
         c.dispatch(TrainerAction.Start(white("e4", "e5", "Nf3", "Nc6")))
+        // The line already leaves the test book: asked straight away.
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        c.dispatch(TrainerAction.PlayOn(3))
         engine.set(line("e4", "e5", "Nf3", "Nc6"), "Bc4", 20) // better than Bb5's 0
         c.move("Bb5") // 20 cp worse: playable, and the book has nothing here
         advanceUntilIdle()
@@ -146,34 +149,131 @@ class TrainerControllerTest {
         assertEquals(1, c.s.moves[2].takebacks)
     }
 
+    /** 1.e4 e5 2.Nf3 Nc6 (the end of the test book), one move past it, then the report. */
+    private fun TestScope.playPastTheBookAndFinish(c: TrainerController) {
+        c.move("Nf3")
+        advanceUntilIdle()
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        c.dispatch(TrainerAction.PlayOn(1))
+        c.move("Bc4")
+        advanceUntilIdle()
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        c.dispatch(TrainerAction.Finish)
+        advanceUntilIdle()
+        assertEquals(Phase.REPORT, c.s.phase)
+    }
+
     @Test
     fun endModeGradesEverythingInTheReport() = runTest {
         val c = controller()
-        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(moves = 2, feedback = FeedbackMode.END))))
+        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(feedback = FeedbackMode.END))))
         c.move("Nf3")
         advanceUntilIdle()
         assertNull(c.s.feedback)
         assertNull(c.s.moves[2].verdict)
+        c.dispatch(TrainerAction.PlayOn(1))
         c.move("Bc4")
+        advanceUntilIdle()
+        c.dispatch(TrainerAction.Finish)
         advanceUntilIdle()
         assertEquals(Phase.REPORT, c.s.phase)
         val r = assertNotNull(c.s.report)
         assertEquals(2, r.userMoves)
         assertEquals(1, r.bookMoves) // Nf3 is book; Bc4 after Nc6 is past the book
+        assertEquals(1, r.bookPositions) // ...so it doesn't count against the user
         assertEquals(Quality.BOOK, r.moves[2].verdict?.quality)
         assertTrue(r.moves[4].verdict!!.pastBook)
-        assertEquals(5, r.moves.size) // the session ends after the user's 2nd move
+        assertEquals(6, r.moves.size) // the bot's reply to Bc4 is in
+    }
+
+    @Test
+    fun theEndOfTheBookAsksWhetherToKeepGoing() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4", "e5")))
+        assertFalse(c.s.pastBook)
+        c.move("Nf3")
+        advanceUntilIdle()
+        // After 2...Nc6 the test book has nothing for White.
+        assertEquals(line("e4", "e5", "Nf3", "Nc6"), c.s.position)
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        assertTrue(c.s.pastBook)
+        assertNull(c.s.movesLeft)
+        // Moves can't be played until the user chose.
+        c.move("Bc4")
+        assertEquals(4, c.s.moves.size)
+
+        c.dispatch(TrainerAction.PlayOn(3))
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(3, c.s.movesLeft)
+        repeat(3) { i ->
+            assertEquals(Phase.YOUR_MOVE, c.s.phase, "extra move ${i + 1}")
+            val m = c.s.position.legalMoves.first()
+            c.dispatch(TrainerAction.PieceDropped(m.from, m.to))
+            advanceUntilIdle()
+        }
+        // The extra moves are played: asked again.
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        assertEquals(0, c.s.movesLeft)
+        assertEquals(4, c.s.userMovesPlayed)
+
+        // Taking one back gives that move back.
+        c.dispatch(TrainerAction.Undo)
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(1, c.s.movesLeft)
+    }
+
+    @Test
+    fun undoingBackIntoTheBookForgetsItsEnd() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4", "e5")))
+        c.move("Nf3")
+        advanceUntilIdle()
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        c.dispatch(TrainerAction.Undo)
+        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(line("e4", "e5"), c.s.position)
+        assertFalse(c.s.pastBook)
+        assertNull(c.s.movesLeft)
+    }
+
+    @Test
+    fun theUserCanFinishAnytime() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(feedback = FeedbackMode.END))))
+        c.move("Nf3")
+        assertEquals(Phase.BOT_THINKING, c.s.phase)
+        c.dispatch(TrainerAction.Finish)
+        advanceUntilIdle()
+        // The bot's pending reply is dropped.
+        assertEquals(Phase.REPORT, c.s.phase)
+        val r = assertNotNull(c.s.report)
+        assertEquals(3, r.moves.size)
+        assertEquals(1, r.bookMoves)
+        assertEquals(1, r.bookPositions)
+
+        // Not from the report itself.
+        c.dispatch(TrainerAction.Finish)
+        assertEquals(Phase.REPORT, c.s.phase)
+    }
+
+    @Test
+    fun finishingWhilePickingTheOpponentsMoveKeepsTheBotsMove() = runTest {
+        val c = controller()
+        c.dispatch(TrainerAction.Start(white("e4")))
+        advanceUntilIdle()
+        val botMove = c.s.moves.last().san
+        c.dispatch(TrainerAction.ChangeOpponentMove)
+        assertEquals(Phase.CHOOSE_OPPONENT_MOVE, c.s.phase)
+        c.dispatch(TrainerAction.Finish)
+        advanceUntilIdle()
+        assertEquals(botMove, assertNotNull(c.s.report).moves.last().san)
     }
 
     @Test
     fun reportMovesCanBeReplayedFromThere() = runTest {
         val c = controller()
-        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(moves = 2, feedback = FeedbackMode.END))))
-        c.move("Nf3")
-        advanceUntilIdle()
-        c.move("Bc4")
-        advanceUntilIdle()
-        assertEquals(Phase.REPORT, c.s.phase)
+        c.dispatch(TrainerAction.Start(white("e4", "e5", options = SessionOptions(feedback = FeedbackMode.END))))
+        playPastTheBookAndFinish(c)
 
         // Starting-line and bot moves can't be resumed from; nothing happens.
         c.dispatch(TrainerAction.ResumeFrom(0))
@@ -189,6 +289,10 @@ class TrainerControllerTest {
         assertEquals(1, c.s.userMovesPlayed)
         assertTrue(c.s.canUndo)
         c.move("Bb5")
+        advanceUntilIdle()
+        // That was the one move asked for; asked again.
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        c.dispatch(TrainerAction.Finish)
         advanceUntilIdle()
         val r = assertNotNull(c.s.report)
         assertEquals("Bb5", r.moves[4].san)
@@ -233,7 +337,9 @@ class TrainerControllerTest {
         c.dispatch(TrainerAction.PieceDropped(sq("e7"), sq("e5"))) // the opponent's piece: not the user's turn for it
         assertEquals(line("e4", "a6"), c.s.position)
 
-        // The game goes on as usual.
+        // 1...a6 leaves the test book; otherwise the game goes on as usual.
+        assertEquals(Phase.KEEP_GOING, c.s.phase)
+        c.dispatch(TrainerAction.PlayOn(3))
         c.move("d4")
         advanceUntilIdle()
         assertEquals(Phase.YOUR_MOVE, c.s.phase)
@@ -261,7 +367,7 @@ class TrainerControllerTest {
         assertEquals(Phase.BOT_THINKING, c.s.phase)
         advanceUntilIdle()
         assertEquals("Nf3", c.s.moves.last().san)
-        assertEquals(Phase.YOUR_MOVE, c.s.phase)
+        assertEquals(Phase.KEEP_GOING, c.s.phase) // the test book has nothing for Black here
     }
 
     @Test
@@ -306,6 +412,7 @@ class TrainerControllerTest {
         val c = controller()
         // 1.a4 b5 2.axb5 a6 3.bxa6 Bb7 4.axb7 Nc6: White can promote on a8 or b8.
         c.dispatch(TrainerAction.Start(white("a4", "b5", "axb5", "a6", "bxa6", "Bb7", "axb7", "Nc6")))
+        c.dispatch(TrainerAction.PlayOn(3))
         c.dispatch(TrainerAction.SquareTapped(sq("b7")))
         assertEquals(sq("b7"), c.s.selected)
         assertEquals(setOf(sq("a8"), sq("b8")), c.s.targets)
@@ -377,9 +484,10 @@ class TrainerControllerTest {
     fun wholeSessionAgainstTheRealBook() = runTest {
         val real = OpeningBook.decode(File("../data/book.bin").readBytes())
         val c = controller(real, seed = 7)
-        c.dispatch(TrainerAction.Start(white("e4", options = SessionOptions(moves = 6))))
+        c.dispatch(TrainerAction.Start(white("e4")))
         var guard = 0
-        while (c.s.phase != Phase.REPORT && guard++ < 50) {
+        var askedBefore = false
+        while (c.s.phase != Phase.REPORT && guard++ < 80) {
             advanceUntilIdle()
             when (c.s.phase) {
                 // Always play the most popular book move, or the first legal move past the book.
@@ -389,11 +497,17 @@ class TrainerControllerTest {
                     c.dispatch(TrainerAction.PieceDropped(m.from, m.to))
                 }
                 Phase.FEEDBACK -> c.dispatch(TrainerAction.Continue)
+                // Two moves past the end of the book, then the report.
+                Phase.KEEP_GOING -> {
+                    c.dispatch(if (askedBefore) TrainerAction.Finish else TrainerAction.PlayOn(2))
+                    askedBefore = true
+                }
                 else -> Unit
             }
         }
         val r = assertNotNull(c.s.report)
-        assertEquals(6, r.userMoves)
+        assertEquals(r.bookPositions + 2, r.userMoves)
+        assertEquals(r.bookPositions, r.bookMoves)
         // The bot's book replies are all bot candidates of the real book.
         var p = Position.start
         for (m in r.moves) {

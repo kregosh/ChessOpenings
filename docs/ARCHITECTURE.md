@@ -40,7 +40,6 @@ platform layer, the same way as MtGLifeTracker.
      (after 1.e4: 1...c5, 1...e5, 1...c6, …). From there on the bot again plays
      realistic moves.
 4. **Options**:
-   - Session length: 5–10 of your own moves.
    - Feedback: after every move, or once at the end.
    - "Show good moves" button (move suggestions).
    - Stockfish eval bar.
@@ -53,10 +52,12 @@ starting line, so it needs no special handling.
 ### 2.2 During a session
 
 - The board starts after the fixed line (with that line shown in the move list).
-- **Session length counts from the end of the starting line**: "8 moves" means
-  8 of your own moves after it.
+- **No fixed length**: you play as long as the book has moves for you. When it runs
+  out (or you left it), a card says so: "That's the end of the book!". You then pick
+  3, 5 or 10 more moves, or "See summary". After the extra moves you're asked again.
+  A "See summary" button ends the session at any time.
 - The bot plays a book reply (see 4.3). When the book runs out, the bot continues
-  with Stockfish moves until the session ends.
+  with Stockfish moves.
 - **Instant feedback mode**: after each move you see:
   - "Book ✓" with a short explanation, or
   - "Not book", with the usual move(s) and a plain-language reason. You can then
@@ -265,11 +266,11 @@ class TrainerController(book: OpeningBook, engine: Engine, scope: CoroutineScope
 - **`TrainerState`**: phase, position and orientation, last move, tap-to-move
   selection and targets, pending promotion, move list (with verdicts, takebacks,
   hints used), feedback, hint and arrows, eval (White's view), opening name, progress
-  (moves played and total), whether undo is possible, report, error.
+  (moves played, past the book, extra moves left), whether undo is possible, report, error.
 - **`TrainerAction`**: `Start(setup)`, `SquareTapped`, `PieceDropped`,
   `PromotionChosen`, `PromotionCancelled`, `ShowHint`, `Retry`, `Continue`, `Undo`,
   `ChangeOpponentMove`, `OpponentMoveChosen(uci)`, `CancelOpponentMove`,
-  `Restart`, `ResumeFrom(moveIndex)` (from the report: back to before one of your
+  `PlayOn(moves)`, `Finish`, `Restart`, `ResumeFrom(moveIndex)` (from the report: back to before one of your
   moves, to try something else), `Quit`.
 - **Setup**: `TrainingSetup(color, line, randomWhiteFirstMove, options)`. The setup
   screen asks `SetupCatalog` for the choices: the user's moves, the opponent's
@@ -291,7 +292,10 @@ YOUR_MOVE → move → CHECKING (instant mode) → book: feedback note → BOT_T
                                                                 → Continue → BOT_THINKING | ANALYZING
 YOUR_MOVE → move (end mode) → BOT_THINKING | ANALYZING
 YOUR_MOVE → Undo → YOUR_MOVE (your last move and the bot's reply taken back)
-BOT_THINKING → YOUR_MOVE | ANALYZING (session length reached, or game over)
+BOT_THINKING → YOUR_MOVE | KEEP_GOING | ANALYZING (game over)
+KEEP_GOING (book ran out, or the extra moves are played) → PlayOn(n) → YOUR_MOVE
+                                                         → Finish → ANALYZING
+any session phase → Finish → ANALYZING
 ANALYZING → REPORT
 ```
 
@@ -402,7 +406,8 @@ Every module below `ui` is unit-tested on the JVM; tests run in CI on every push
 
 1. **As Black** you pick your own first move. White's first move is random among
    those that allow it as a book reply, or picked by you (see 2.1).
-2. **Session length** counts from the end of the starting line.
+2. **Session length**: no fixed length. A session runs to the end of the book, then
+   the user chooses how many more moves to play (see 2.2).
 3. **Out of book**, the bot plays full-strength Stockfish.
 4. **Package**: `com.kregosh.chessopenings`.
 
