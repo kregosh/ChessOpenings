@@ -81,7 +81,8 @@ fun AppRoot(
                 Surface(
                     Modifier.widthIn(max = maxWidth).fillMaxWidth().fillMaxHeight().padding(PANEL_MARGIN),
                     shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.background,
+                    // A hint of the picture shows through behind the screens.
+                    color = MaterialTheme.colorScheme.background.copy(alpha = PANEL_ALPHA),
                     shadowElevation = 8.dp,
                 ) { content() }
             }
@@ -90,6 +91,7 @@ fun AppRoot(
 }
 
 private val PANEL_MARGIN = 10.dp
-private val BACKGROUND_BLUR = 6.dp
-private const val BACKGROUND_SATURATION = 0.6f
-private const val BACKGROUND_SCRIM = 0.55f
+private const val PANEL_ALPHA = 0.86f
+private val BACKGROUND_BLUR = 2.dp
+private const val BACKGROUND_SATURATION = 0.8f
+private const val BACKGROUND_SCRIM = 0.3f
