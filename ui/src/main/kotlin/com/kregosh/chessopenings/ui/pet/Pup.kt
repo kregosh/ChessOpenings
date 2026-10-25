@@ -32,6 +32,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.kregosh.chessopenings.core.pet.Mood
 import com.kregosh.chessopenings.core.pet.PetView
@@ -68,7 +69,7 @@ private fun PixelArt(sprite: Sprite, pixel: Dp, modifier: Modifier = Modifier) {
 }
 
 @Composable
-internal fun PixelIcon(icon: PupIcon, pixel: Dp = 2.dp, modifier: Modifier = Modifier) = PixelArt(icons.getValue(icon), pixel, modifier)
+internal fun PixelIcon(icon: PupIcon, modifier: Modifier = Modifier, pixel: Dp = 2.dp) = PixelArt(icons.getValue(icon), pixel, modifier)
 
 /** The frames a mood or reaction cycles through, and whether the pup hops. */
 private fun animation(mood: Mood, reaction: PupReaction?, tick: Int): Pair<PupFrame, Boolean> {
@@ -93,7 +94,7 @@ private fun animation(mood: Mood, reaction: PupReaction?, tick: Int): Pair<PupFr
 
 /** The animated pup. Tapping it calls [onTap] (petting). */
 @Composable
-fun Pup(mood: Mood, reaction: PupReaction? = null, pixel: Dp = 3.dp, modifier: Modifier = Modifier, onTap: (() -> Unit)? = null) {
+fun Pup(mood: Mood, modifier: Modifier = Modifier, reaction: PupReaction? = null, pixel: Dp = 3.dp, onTap: (() -> Unit)? = null) {
     var tick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -104,12 +105,12 @@ fun Pup(mood: Mood, reaction: PupReaction? = null, pixel: Dp = 3.dp, modifier: M
     val (frame, hop) = animation(mood, reaction, tick)
     val tap = if (onTap == null) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null, onClick = onTap)
     Box(modifier.size(pixel * 32, pixel * 34).then(tap), contentAlignment = Alignment.BottomCenter) {
-        PixelArt(frames.getValue(frame), pixel, Modifier.offset(y = if (hop) -pixel * 2 else 0.dp))
+        PixelArt(frames.getValue(frame), pixel, Modifier.offset { IntOffset(0, if (hop) -(pixel * 2).roundToPx() else 0) })
         when {
             reaction == PupReaction.PATTED || (reaction == PupReaction.CHEER && tick % 2 == 0) ->
-                PixelIcon(PupIcon.HEART, pixel, Modifier.align(Alignment.TopEnd).offset(y = -pixel * (tick % 3)))
+                PixelIcon(PupIcon.HEART, Modifier.align(Alignment.TopEnd).offset { IntOffset(0, -(pixel * (tick % 3)).roundToPx()) }, pixel)
             reaction == null && mood == Mood.ASLEEP ->
-                PixelIcon(PupIcon.ZZZ, pixel, Modifier.align(Alignment.TopEnd).offset(x = -pixel * 2, y = pixel * (8 - tick % 4)))
+                PixelIcon(PupIcon.ZZZ, Modifier.align(Alignment.TopEnd).offset { IntOffset(-(pixel * 2).roundToPx(), (pixel * (8 - tick % 4)).roundToPx()) }, pixel)
         }
     }
 }
@@ -135,7 +136,7 @@ fun PetCard(view: PetView, onPat: () -> Unit) {
     val reaction = rememberReaction(pats, if (pats > 0) PupReaction.PATTED else null, 1200)
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Pup(view.mood, reaction, pixel = 3.dp) {
+            Pup(view.mood, reaction = reaction, pixel = 3.dp) {
                 pats++
                 onPat()
             }
@@ -177,7 +178,7 @@ fun TrainingPup(view: PetView, reaction: PupReaction?) {
     // Training wakes the pup up.
     val mood = if (view.mood == Mood.ASLEEP) Mood.CONTENT else view.mood
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Pup(mood, reaction, pixel = 2.dp)
+        Pup(mood, reaction = reaction, pixel = 2.dp)
         reaction?.let { Text(PetStrings.reaction(it), style = MaterialTheme.typography.bodyMedium) }
     }
 }
@@ -196,7 +197,7 @@ fun FeedingCard(view: PetView, treat: Treat) {
     }
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Pup(if (after != null) Mood.HAPPY else Mood.CONTENT, if (eating) PupReaction.EATING else after, pixel = 3.dp)
+            Pup(if (after != null) Mood.HAPPY else Mood.CONTENT, reaction = if (eating) PupReaction.EATING else after, pixel = 3.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(if (eating) "Munch munch…" else PetStrings.treat(treat.grade), fontWeight = FontWeight.SemiBold)
                 Need(PupIcon.BONE, "Food", view.state.food)

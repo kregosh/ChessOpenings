@@ -3,7 +3,7 @@
 The pup is a light-brown whelp with a blue collar, 32 × 32 pixels, built from one
 symmetric sitting pose (or a lying one) plus face, tail and prop layers per frame.
 
-    python3 tools/pup/generate_pup.py              # writes PupSprites.kt
+    python3 tools/pup/generate_pup.py              # writes PupSprites.kt and the Android launcher icons (needs Pillow)
     python3 tools/pup/generate_pup.py preview.png  # also renders every frame to a PNG
 """
 import pathlib
@@ -11,6 +11,7 @@ import sys
 
 HERE = pathlib.Path(__file__).parent
 OUT = HERE.parent.parent / "ui/src/main/kotlin/com/kregosh/chessopenings/ui/pet/PupSprites.kt"
+ICON_DIR = HERE.parent.parent / "app/src/main/res"
 
 PALETTE = {
     "K": 0x4A2E1A,  # outline
@@ -243,6 +244,29 @@ def kotlin():
     return "\n".join(lines)
 
 
+# Adaptive-icon foreground sizes (108 dp) per density, and the size of one sprite pixel
+# there: whole pixels keep the pixel art crisp, and the pup stays inside the safe zone.
+ICON_DENSITIES = {"mdpi": (108, 2), "hdpi": (162, 3), "xhdpi": (216, 4), "xxhdpi": (324, 6), "xxxhdpi": (432, 8)}
+
+
+def launcher_icons(frame="IDLE"):
+    """Writes the pup as the adaptive-icon foreground, one crisp PNG per density."""
+    from PIL import Image
+    rows = FRAMES[frame]
+    for density, (size, px) in ICON_DENSITIES.items():
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        off = (size - SIZE * px) // 2
+        for y, row in enumerate(rows):
+            for x, ch in enumerate(row):
+                if ch in PALETTE:
+                    v = PALETTE[ch]
+                    img.paste((v >> 16, (v >> 8) & 255, v & 255, 255),
+                              (off + x * px, off + y * px, off + (x + 1) * px, off + (y + 1) * px))
+        path = ICON_DIR / f"mipmap-{density}" / "ic_launcher_foreground.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        img.save(path, optimize=True)
+
+
 def preview(path):
     from PIL import Image
     scale = 8
@@ -263,5 +287,6 @@ def preview(path):
 if __name__ == "__main__":
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(kotlin())
+    launcher_icons()
     if len(sys.argv) > 1:
         preview(sys.argv[1])

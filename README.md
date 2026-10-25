@@ -15,7 +15,7 @@ Design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 | `tools/bookgen` (opening book from Lichess games) | Done, first real book pending (GitHub Actions) |
 | `ui` (shared Compose screens) | Setup, training and report screens; board with drag and tap |
 | `web` (browser app) | Runs: Kotlin/Wasm, Stockfish in a Web Worker; deployed to GitHub Pages from `main` |
-| `app` (Android) | Later |
+| `app` (Android) | Runs: same screens, Stockfish.js in a hidden WebView; debug APK from CI |
 
 ## Building and testing
 
@@ -25,7 +25,11 @@ Requires JDK 17+.
 ./gradlew test                                  # unit tests for every module
 ./gradlew -p web wasmJsBrowserDevelopmentRun    # the browser app at http://localhost:8080
 ./gradlew -p web wasmJsBrowserDistribution      # static site in web/build/dist/wasmJs/productionExecutable
+./gradlew -p app assembleDebug                  # Android APK in app/build/outputs/apk/debug (needs the Android SDK)
 ```
+
+Every CI run also builds the Android app and uploads a debug APK
+(`opening-trainer-apk`) that can be installed on a phone.
 
 The browser app needs WebAssembly GC: current Chrome, Firefox, Edge, and Safari 18.2+.
 
