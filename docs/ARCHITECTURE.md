@@ -133,8 +133,9 @@ ChessOpenings/
 ├── ui/        Compose screens shared by Android and web: board, setup,
 │              training, report. Talks to core only through TrainerState
 │              and TrainerAction.
-├── app/       Android app: native Stockfish engine, SharedPreferences store,
-│              AndroidPlatform.
+├── app/       Android app: standalone Gradle build (AGP), like web/. Compiles
+│              chess, core and ui from source; adds Stockfish WASM in a hidden
+│              WebView, assets, SharedPreferences and back handling.
 ├── web/       Browser app: standalone Gradle build on Kotlin/Wasm, like
 │              MtGLifeTracker's web/. Compiles chess, core and ui from source;
 │              adds Stockfish WASM in a Web Worker and localStorage.
@@ -307,8 +308,8 @@ class TrainerController(book: OpeningBook, engine: Engine, scope: CoroutineScope
   enums (`DEVELOPS_PIECE`, `EARLY_QUEEN`, `BLOCKS_BISHOP`, `HANGS_PIECE`, …); `ui`
   turns them into friendly text.
 
-`ui` wraps the controller in a small androidx `ViewModel` so it survives configuration
-changes on Android.
+On Android the controllers live in the `Application` (`TrainerApp`), so a session
+survives the activity being recreated; rotation doesn't recreate it at all.
 
 ### 6.3 Session state machine
 
@@ -340,19 +341,22 @@ plays Stockfish's best move.
 
 ## 7. Engines (platform)
 
+Both platforms run the same engine: Stockfish.js 17.1, "lite single-threaded" WASM
+build, with the small NNUE net embedded (~7 MB).
+
 | | Android | Web |
 |---|---|---|
-| Binary | Stockfish built from source with the NDK for arm64-v8a, armeabi-v7a, x86_64 | Stockfish.js "lite single-threaded" WASM build |
-| Packaging | Shipped as `libstockfish.so` in `jniLibs`, so Android allows executing it from the native library directory | Static file served next to the app |
-| Talks via | UCI over the process's stdin/stdout | UCI over Web Worker messages; small JS interop file, like MtGLifeTracker's Firebase interop |
-| Network file | Small NNUE net only, to keep the APK small | Embedded in the lite build (~7 MB) |
+| Runs in | A Web Worker in a hidden `WebView` (`AndroidEngine`) | A Web Worker (`WebEngine`) |
+| Files | APK assets, served to the WebView under an https origin by `WebViewAssetLoader`; the build fetches them from npm with a pinned hash | Static files next to the app, from the npm package |
+| Talks via | `engine.html` relays UCI between the worker and a JavaScript interface | Worker messages via `js()` interop |
 
-Both sit behind `Engine`; one engine instance per app, with requests queued.
+Both hand their text lines to `QueuedUciEngine` in `core`: the UCI handshake, one
+search at a time, queued requests, skipping or stopping cancelled ones, and parsing
+`info … pv` lines. One engine instance per app.
 
-**Risks to check first with a small spike:**
-
-- The Android packaging and process approach.
-- APK size with the NNUE network.
+A native Stockfish (built with the NDK, run as a process) was the first plan. It was
+dropped: current Stockfish needs its big network too (tens of MB in the APK), it can
+only be built in CI, and the WASM build is strong and fast enough for this app.
 
 ## 8. `ui`: shared Compose screens
 
@@ -440,6 +444,8 @@ Every module below `ui` is unit-tested on the JVM; tests run in CI on every push
    the user chooses how many more moves to play (see 2.2).
 3. **Out of book**, the bot plays full-strength Stockfish.
 4. **Package**: `com.kregosh.chessopenings`.
+5. **Android engine**: the web app's Stockfish.js in a WebView, not a native build
+   (see 7).
 
 ## 14. Suggested build order
 

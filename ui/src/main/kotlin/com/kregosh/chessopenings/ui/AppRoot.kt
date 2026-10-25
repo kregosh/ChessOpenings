@@ -3,11 +3,14 @@ package com.kregosh.chessopenings.ui
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -93,7 +96,9 @@ fun AppRoot(
             }
         }
         if (background == null) {
-            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { content() }
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Box(Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) { content() }
+            }
         } else {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 // Muted so it stays decoration: softened, less saturated, and washed out
@@ -109,7 +114,9 @@ fun AppRoot(
                 // Setup and report are a narrow column; training spreads out next to the board.
                 val maxWidth = if (state.phase == Phase.IDLE || state.phase == Phase.REPORT) 720.dp else 1200.dp
                 Surface(
-                    Modifier.widthIn(max = maxWidth).fillMaxWidth().fillMaxHeight().padding(PANEL_MARGIN),
+                    // Clear of the status and navigation bars on Android; no insets on the web.
+                    Modifier.windowInsetsPadding(WindowInsets.safeDrawing)
+                        .widthIn(max = maxWidth).fillMaxWidth().fillMaxHeight().padding(PANEL_MARGIN),
                     shape = RoundedCornerShape(16.dp),
                     // A hint of the picture shows through behind the screens.
                     color = MaterialTheme.colorScheme.background.copy(alpha = PANEL_ALPHA),

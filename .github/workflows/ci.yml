@@ -55,3 +55,35 @@ jobs:
       # Also catches JVM-only APIs in the shared chess, core and ui code.
       - name: Build the browser app
         run: ./gradlew --no-daemon -p web wasmJsBrowserDistribution
+
+  android:
+    name: Android app – build and lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # The runner has the Android SDK; the build fetches the platform it needs.
+      - name: Build and lint the Android app
+        run: ./gradlew --no-daemon -p app lintDebug assembleDebug
+
+      # A debug-signed APK, installable on a phone for trying out.
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: opening-trainer-apk
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload the lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-report
+          path: app/build/reports/lint-results-debug.html
