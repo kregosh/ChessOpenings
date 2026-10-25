@@ -101,11 +101,15 @@ The tone should be friendly and a bit playful.
 The streak is a Tamagotchi-style pixel-art puppy: a light-brown whelp with a blue
 collar.
 
-- **Food**: any finished session fills its bowl.
-- **Happiness**: rises more after a good session (book share, few mistakes, no
-  takebacks or hints, playing past the book). Tapping the pup pets it a little.
-- **Running down**: both needs drop slowly while the user is away. Food lasts about
-  a day; happiness about three days.
+- **Food**: any finished session adds to its bowl. Three sessions fill a new pup's
+  bowl.
+- **Happiness**: rises with good, long sessions (book share, few mistakes, no
+  takebacks or hints). A perfect session of 7+ moves gives the most; about ten of
+  those take a new pup from content to happy. Shorter or weaker sessions count for
+  less. Tapping the pup pets it a little.
+- **Running down**: both needs drop slowly while the user is away. A full bowl lasts
+  about a day and a half, so three sessions a day keep it full. Full happiness lasts
+  about three weeks.
 - **Moods**: happy, content, bored, hungry and sad. It sleeps at night, unless the
   user was just with it. After 3 days without training it gets sick; one session
   perks it up. It never dies, and nothing is lost for good.
