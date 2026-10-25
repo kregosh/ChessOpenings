@@ -28,7 +28,7 @@ import com.kregosh.chessopenings.core.training.TrainerAction
 import com.kregosh.chessopenings.ui.Strings
 
 @Composable
-fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit) {
+fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit, header: @Composable () -> Unit = {}) {
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -47,6 +47,7 @@ fun ReportScreen(report: Report, dispatch: (TrainerAction) -> Unit) {
                 report.finalEval?.let { "final eval ${Strings.eval(it)}" },
             )
             if (extras.isNotEmpty()) Text(extras.joinToString(" · "), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            header()
 
             Text(
                 "Tap one of your moves to go back and try something else from there.",
