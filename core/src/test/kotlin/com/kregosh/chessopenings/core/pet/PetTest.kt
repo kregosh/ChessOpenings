@@ -93,16 +93,47 @@ class PetTest {
         assertEquals(2, restarted.longestStreak)
     }
 
+    private val perfectSeven = report(*Array(7) { move(Quality.BOOK) })
+
+    @Test
+    fun threeSessionsFillTheBowl() {
+        var s = PetState()
+        repeat(2) { s = PetRules.feed(s, perfect, at(10)).first }
+        assertTrue(s.food < 1.0)
+        s = PetRules.feed(s, perfect, at(10)).first
+        assertEquals(1.0, s.food, 1e-9)
+    }
+
+    @Test
+    fun aboutTenPerfectLongSessionsMakeThePupHappy() {
+        var s = PetState()
+        repeat(8) { s = PetRules.feed(s, perfectSeven, at(10)).first }
+        assertTrue(PetRules.mood(s, at(10)) != Mood.HAPPY)
+        repeat(2) { s = PetRules.feed(s, perfectSeven, at(10)).first }
+        assertEquals(Mood.HAPPY, PetRules.mood(s, at(10)))
+        assertEquals(1.0, s.happiness, 1e-9)
+    }
+
+    @Test
+    fun shortAndWeakSessionsCountForLess() {
+        val start = PetState()
+        val long = PetRules.feed(start, perfectSeven, at(10)).second.happiness
+        val short = PetRules.feed(start, perfect, at(10)).second.happiness // 3 moves
+        val rough = PetRules.feed(start, report(*Array(7) { move(Quality.BLUNDER) }), at(10)).second.happiness
+        assertEquals(PetRules.BEST_JOY, long, 1e-9)
+        assertEquals(PetRules.BEST_JOY * 3 / 7, short, 1e-9)
+        assertTrue(rough in 0.0..short)
+    }
+
     @Test
     fun moods() {
-        val fed = PetRules.feed(PetState(), perfect, at(10)).first
+        val fed = PetState(food = 1.0, happiness = 0.95, updatedAt = at(10).epochMs, lastFedDay = 10, streak = 1)
         assertEquals(Mood.HAPPY, PetRules.mood(fed, at(10)))
-        assertEquals(Mood.HUNGRY, PetRules.mood(fed, at(11, hours = -1))) // 23 hours later
-        assertEquals(Mood.HAPPY, PetRules.mood(fed, at(10, hours = 4)))
+        assertEquals(Mood.HUNGRY, PetRules.mood(fed, at(11, hours = 7))) // 31 hours later
         assertEquals(Mood.SICK, PetRules.mood(fed, at(13)))
-        // Sad when happiness ran low but food is fine.
+        assertEquals(Mood.CONTENT, PetRules.mood(PetState(), at(10))) // a new pup
         assertEquals(Mood.SAD, PetRules.mood(PetState(food = 1.0, happiness = 0.1, updatedAt = at(10).epochMs), at(10)))
-        assertEquals(Mood.BORED, PetRules.mood(PetState(food = 1.0, happiness = 0.4, updatedAt = at(10).epochMs), at(10)))
+        assertEquals(Mood.BORED, PetRules.mood(PetState(food = 1.0, happiness = 0.2, updatedAt = at(10).epochMs), at(10)))
         assertEquals(Mood.CONTENT, PetRules.mood(PetState(food = 1.0, happiness = 0.6, updatedAt = at(10).epochMs), at(10)))
     }
 

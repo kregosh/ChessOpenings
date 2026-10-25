@@ -31,8 +31,8 @@ data class PetState(
     val longestStreak: Int = 0,
 ) {
     companion object {
-        const val START_FOOD = 0.5
-        const val START_HAPPINESS = 0.6
+        const val START_FOOD = 0.4
+        const val START_HAPPINESS = 0.35
     }
 }
 
@@ -41,13 +41,22 @@ data class Treat(val grade: SessionGrade, val food: Double, val happiness: Doubl
 
 /** The pup's rules. Pure: time comes in as a [Moment]. */
 object PetRules {
-    /** Food lasts about a day and a quarter; happiness about three days. */
-    const val FOOD_PER_HOUR = 1.0 / 30
-    const val HAPPINESS_PER_HOUR = 1.0 / 72
-    const val MEAL = 0.6
-    const val PAT = 0.03
+    /** A full bowl lasts about a day and a half (three sessions a day keep it full); happiness about three weeks. */
+    const val FOOD_PER_HOUR = 1.0 / 40
+    const val HAPPINESS_PER_HOUR = 1.0 / 480
+    /** Any session: three of them fill the bowl of a new pup. */
+    const val MEAL = 0.2
+    /**
+     * Happiness for a perfect session of at least [FULL_SESSION_MOVES] of the user's moves:
+     * about ten of them take a new pup to full happiness.
+     */
+    const val BEST_JOY = 0.065
+    const val FULL_SESSION_MOVES = 7
+    /** Happiness from which the pup is happy rather than content. */
+    const val HAPPY_FROM = 0.9
+    const val PAT = 0.01
     /** Petting alone cheers the pup up only this far; training does the rest. */
-    const val PAT_LIMIT = 0.6
+    const val PAT_LIMIT = 0.4
     /** Days without a session after which the pup gets sick. */
     const val SICK_AFTER_DAYS = 3
     /** The pup sleeps at night unless the user was just with it. */
@@ -82,13 +91,14 @@ object PetRules {
     fun feed(state: PetState, report: Report, now: Moment): Pair<PetState, Treat> {
         val s = elapse(state, now)
         val grade = grade(report)
-        val pastBook = report.userMoves > report.bookPositions
-        val joy = when (grade) {
-            SessionGrade.GREAT -> 0.35
-            SessionGrade.GOOD -> 0.25
-            SessionGrade.OK -> 0.15
-            SessionGrade.ROUGH -> 0.08
-        } + if (pastBook) 0.05 else 0.0
+        // Better and longer sessions make the pup happier; short ones count for less.
+        val length = minOf(report.userMoves, FULL_SESSION_MOVES).toDouble() / FULL_SESSION_MOVES
+        val joy = BEST_JOY * length * when (grade) {
+            SessionGrade.GREAT -> 1.0
+            SessionGrade.GOOD -> 0.6
+            SessionGrade.OK -> 0.3
+            SessionGrade.ROUGH -> 0.15
+        }
         val streak = when (s.lastFedDay) {
             now.localDay -> s.streak
             now.localDay - 1 -> s.streak + 1
@@ -119,9 +129,9 @@ object PetRules {
             daysSinceFed != null && daysSinceFed >= SICK_AFTER_DAYS -> Mood.SICK
             now.localHour in NIGHT_HOURS && now.epochMs - s.activeAt > AWAKE_AFTER_ACTIVITY_MS -> Mood.ASLEEP
             s.food < 0.25 -> Mood.HUNGRY
-            s.happiness < 0.25 -> Mood.SAD
-            s.happiness < 0.45 -> Mood.BORED
-            s.happiness >= 0.7 && s.food >= 0.4 -> Mood.HAPPY
+            s.happiness < 0.15 -> Mood.SAD
+            s.happiness < 0.3 -> Mood.BORED
+            s.happiness >= HAPPY_FROM && s.food >= 0.5 -> Mood.HAPPY
             else -> Mood.CONTENT
         }
     }
