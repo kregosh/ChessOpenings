@@ -94,8 +94,29 @@ Feedback should teach, not only grade. Each move gets:
 - **The opening name** once the position matches a named opening ("You're in the
   Italian Game").
 
-The tone should be friendly and a bit playful. Streaks and achievements come later
-(see 9).
+The tone should be friendly and a bit playful.
+
+### 2.4 The pup (streak)
+
+The streak is a Tamagotchi-style pixel-art puppy: a light-brown whelp with a blue
+collar.
+
+- **Food**: any finished session fills its bowl.
+- **Happiness**: rises more after a good session (book share, few mistakes, no
+  takebacks or hints, playing past the book). Tapping the pup pets it a little.
+- **Running down**: both needs drop slowly while the user is away. Food lasts about
+  a day; happiness about three days.
+- **Moods**: happy, content, bored, hungry and sad. It sleeps at night, unless the
+  user was just with it. After 3 days without training it gets sick; one session
+  perks it up. It never dies, and nothing is lost for good.
+- **Streak**: days in a row with a finished session, local calendar days.
+- **Where it shows**:
+  - a card on the setup screen;
+  - next to the board while training, where it reacts to graded moves and to the
+    end of the book;
+  - on the report, where it eats and reacts to how the session went.
+
+Achievements come later (see 9).
 
 ## 3. Modules
 
@@ -248,8 +269,10 @@ interface Engine {
 ```
 
 Platforms also load `book.bin` (Android assets, a fetch on the web) and store settings;
-both are plain app code around `core`. Later: a `ProgressStore` for streaks and
-achievements.
+both are plain app code around `core`. They also keep the pup: `PetStore` (a string
+in the browser's localStorage on the web), and the time as a `Moment` (epoch time
+plus the local day and hour). `PetRules` (pure) and `PetController` live in
+`core/pet`.
 
 ### 6.2 The contract between screens and logic
 
@@ -334,6 +357,9 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
   images by `tools/pieces/generate_pieces.py`. Board: light blue and darker blue squares.
   Moves slide into place (0.35 s), so the bot's move is easy to follow; moves you
   drag, undo and jumps back aren't animated.
+- **Pup**: 32 × 32 pixel sprites drawn by `tools/pup/generate_pup.py`, which writes
+  `ui/pet/PupSprites.kt`. They're drawn on a Canvas with square pixels. Screens get
+  the pup through slots, so they don't depend on it.
 - **Screens**: Setup (color, starting-line picker board with move popularity,
   opponent, options), Training (board, eval bar, feedback card, hint, move list),
   Report.
@@ -344,7 +370,7 @@ Both sit behind `Engine`; one engine instance per app, with requests queued.
 
 ## 9. Later
 
-- **Progress**: streaks, per-line success rate, achievements ("10 book games in a
+- **Progress**: per-line success rate, achievements ("10 book games in a
   row", "survived the Sicilian"), spaced repetition of lines you get wrong. All
   behind `ProgressStore`, local only at first.
 - Opponent level setting (rating band for the bot's replies). The book would carry

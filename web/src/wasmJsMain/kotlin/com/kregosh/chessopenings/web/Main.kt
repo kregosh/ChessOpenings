@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.ComposeViewport
 import com.kregosh.chessopenings.core.book.OpeningBook
+import com.kregosh.chessopenings.core.pet.PetController
 import com.kregosh.chessopenings.core.training.SetupCatalog
 import com.kregosh.chessopenings.core.training.TrainerController
 import com.kregosh.chessopenings.ui.AppRoot
@@ -43,7 +44,7 @@ private suspend fun loadBytes(url: String): ByteArray {
 private sealed interface Loading {
     data object InProgress : Loading
     data class Failed(val message: String) : Loading
-    data class Ready(val controller: TrainerController, val catalog: SetupCatalog, val background: ImageBitmap?) : Loading
+    data class Ready(val controller: TrainerController, val catalog: SetupCatalog, val background: ImageBitmap?, val pet: PetController) : Loading
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -56,7 +57,8 @@ fun main() {
             val engine = WebEngine("engine/stockfish.js", scope)
             // The background picture is decoration: the app works without it.
             val background = runCatching { SkiaImage.makeFromEncoded(loadBytes("background.jpg")).toComposeImageBitmap() }.getOrNull()
-            Loading.Ready(TrainerController(book, engine, scope), SetupCatalog(book), background)
+            val pet = PetController(LocalStoragePetStore(), ::webMoment)
+            Loading.Ready(TrainerController(book, engine, scope), SetupCatalog(book), background, pet)
         } catch (e: Throwable) {
             Loading.Failed(e.message ?: e.toString())
         }
@@ -65,7 +67,7 @@ fun main() {
         when (val l = loading) {
             is Loading.Ready -> {
                 val background = remember(l.background) { l.background?.let(::BitmapPainter) }
-                AppRoot(l.controller, l.catalog, background = background)
+                AppRoot(l.controller, l.catalog, background = background, pet = l.pet)
             }
             is Loading.Failed -> Centered { Text("Couldn't load the opening book: ${l.message}") }
             Loading.InProgress -> Centered { CircularProgressIndicator() }

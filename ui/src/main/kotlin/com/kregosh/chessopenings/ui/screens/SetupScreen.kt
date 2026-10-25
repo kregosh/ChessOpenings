@@ -58,7 +58,12 @@ private const val MAX_CHOICES = 8
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun SetupScreen(catalog: SetupCatalog, initial: SetupSelection, onStart: (TrainingSetup, SetupSelection) -> Unit) {
+fun SetupScreen(
+    catalog: SetupCatalog,
+    initial: SetupSelection,
+    header: @Composable () -> Unit = {},
+    onStart: (TrainingSetup, SetupSelection) -> Unit,
+) {
     var selection by remember { mutableStateOf(initial) }
     val color = selection.color
 
@@ -94,6 +99,7 @@ fun SetupScreen(catalog: SetupCatalog, initial: SetupSelection, onStart: (Traini
                 "Pick a first move and learn how to answer what your opponents really play.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            header()
 
             Section("Play as") {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

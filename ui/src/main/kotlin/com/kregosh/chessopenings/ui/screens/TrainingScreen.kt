@@ -57,7 +57,7 @@ import com.kregosh.chessopenings.ui.board.Pieces
 import com.kregosh.chessopenings.ui.theme.QualityColors
 
 @Composable
-fun TrainingScreen(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
+fun TrainingScreen(state: TrainerState, dispatch: (TrainerAction) -> Unit, companion: @Composable () -> Unit = {}) {
     BoxWithConstraints(Modifier.fillMaxSize().padding(12.dp)) {
         val w = maxWidth
         val h = maxHeight
@@ -65,13 +65,13 @@ fun TrainingScreen(state: TrainerState, dispatch: (TrainerAction) -> Unit) {
         if (wide) {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 BoardArea(state, dispatch, minOf(h, w * 0.6f))
-                SidePanel(state, dispatch, Modifier.weight(1f).fillMaxHeight())
+                SidePanel(state, dispatch, companion, Modifier.weight(1f).fillMaxHeight())
             }
         } else {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Header(state, dispatch)
                 BoardArea(state, dispatch, minOf(w, h * 0.62f))
-                SidePanelContent(state, dispatch, showHeader = false)
+                SidePanelContent(state, dispatch, companion, showHeader = false)
             }
         }
     }
@@ -105,15 +105,16 @@ private fun BoardArea(state: TrainerState, dispatch: (TrainerAction) -> Unit, si
 }
 
 @Composable
-private fun SidePanel(state: TrainerState, dispatch: (TrainerAction) -> Unit, modifier: Modifier) {
+private fun SidePanel(state: TrainerState, dispatch: (TrainerAction) -> Unit, companion: @Composable () -> Unit, modifier: Modifier) {
     Column(modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        SidePanelContent(state, dispatch, showHeader = true)
+        SidePanelContent(state, dispatch, companion, showHeader = true)
     }
 }
 
 @Composable
-private fun SidePanelContent(state: TrainerState, dispatch: (TrainerAction) -> Unit, showHeader: Boolean) {
+private fun SidePanelContent(state: TrainerState, dispatch: (TrainerAction) -> Unit, companion: @Composable () -> Unit, showHeader: Boolean) {
     if (showHeader) Header(state, dispatch)
+    companion()
     state.error?.let { ErrorCard(it, dispatch) }
     StatusLine(state)
     state.feedback?.takeIf { state.setup?.options?.feedback == FeedbackMode.INSTANT }?.let { FeedbackCard(it, dispatch) }
